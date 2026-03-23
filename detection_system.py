@@ -3,7 +3,9 @@ import cv2
 import os
 import time
 import json
+import copy
 from pathlib import Path
+from dotenv import load_dotenv
 from ultralytics import YOLO
 import mediapipe as mp
 from scipy.spatial.distance import euclidean
@@ -32,102 +34,177 @@ class Colors:
     WHITE = '\033[97m'
     BOLD = '\033[1m'
 
-# Configuration management
+PROJECT_ROOT = Path(__file__).resolve().parent
+ENV_PATH = PROJECT_ROOT / ".env"
+load_dotenv(ENV_PATH)
+
+
+# Configuration management — non-secrets in settings.json; Telegram credentials in .env only
 class ConfigManager:
-    def __init__(self, config_path):
-        self.config_path = config_path
-        self.config = self._load_config()
+    def __init__(self, settings_path=None):
+        self.settings_path = (
+            Path(settings_path) if settings_path else PROJECT_ROOT / "settings.json"
+        )
+        if not self.settings_path.is_absolute():
+            self.settings_path = PROJECT_ROOT / self.settings_path
+        self.env_path = PROJECT_ROOT / ".env"
         self.callbacks = []
-        
-    def _load_config(self):
-        """Load configuration from JSON file or create default if not exists"""
+        if not self.settings_path.exists():
+            self._settings = self._default_settings()
+            self._save_settings()
+        else:
+            self._settings = self._load_settings_from_file()
+        load_dotenv(self.env_path, override=True)
+
+    def _default_settings(self):
+        return {
+            "detection": {
+                "fire": True,
+                "smoke": True,
+                "motion": True,
+                "face": True,
+            },
+            "telegram": {
+                "enabled": False,
+                "cooldown": 30,
+            },
+            "system": {
+                "camera_index": 0,
+                "camera_url": "",
+                "model_path": "models/yolov8-fire-smoke-ncnn",
+                "detection_interval": 0.5,
+                "face_save_interval": 1.0,
+                "alarm_threshold": 3,
+                "max_saved_faces": 50,
+            },
+        }
+
+    def _sanitize_settings(self, data):
+        """Remove any legacy secret fields from JSON (never persist tokens in settings)."""
+        tg = data.get("telegram")
+        if isinstance(tg, dict):
+            tg.pop("token", None)
+            tg.pop("chat_id", None)
+
+    def _load_settings_from_file(self):
         try:
-            if os.path.exists(self.config_path):
-                with open(self.config_path, 'r') as f:
-                    return json.load(f)
-            else:
-                # Create default configuration
-                default_config = {
-                    "detection": {
-                        "fire": True,
-                        "smoke": True,
-                        "motion": True, 
-                        "face": True
-                    },
-                    "telegram": {
-                        "enabled": False,
-                        "token": "",
-                        "chat_id": "",
-                        "cooldown": 30,
-                    },
-                    "system": {
-                        "camera_index": 0,
-                        "model_path": "models/yolov8-fire-smoke-ncnn",
-                        "detection_interval": 0.5,
-                        "face_save_interval": 1.0,
-                        "alarm_threshold": 3,
-                        "max_saved_faces": 50
-                    }
-                }
-                self._save_config(default_config)
-                return default_config
+            with open(self.settings_path, "r") as f:
+                data = json.load(f)
+            self._sanitize_settings(data)
+            return data
         except Exception as e:
-            print(f"Error loading config: {str(e)}")
-            return {}
-    
-    def _save_config(self, config=None):
-        """Save configuration to JSON file"""
-        if config is None:
-            config = self.config
-            
+            print(f"Error loading settings: {e}")
+            return self._default_settings()
+
+    def reload_from_disk(self):
+        """Reload settings.json and .env from disk."""
+        self._settings = self._load_settings_from_file()
+        load_dotenv(self.env_path, override=True)
+
+    def get_config(self):
+        """Full runtime config (includes Telegram token/chat_id from environment)."""
+        cfg = copy.deepcopy(self._settings)
+        cfg.setdefault("telegram", {})
+        tg = cfg["telegram"]
+        tg["token"] = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+        tg["chat_id"] = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+        return cfg
+
+    def get_public_config(self):
+        """Settings safe to expose to the browser (no secrets)."""
+        cfg = copy.deepcopy(self._settings)
+        cfg.setdefault("telegram", {})
+        token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+        chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+        cfg["telegram"]["credentials_configured"] = bool(token and chat_id)
+        return cfg
+
+    def _save_settings(self):
         try:
-            with open(self.config_path, 'w') as f:
-                json.dump(config, f, indent=2)
+            with open(self.settings_path, "w") as f:
+                json.dump(self._settings, f, indent=2)
             return True
         except Exception as e:
-            print(f"Error saving config: {str(e)}")
+            print(f"Error saving settings: {e}")
             return False
-    
-    def get_config(self):
-        """Get current configuration"""
-        return self.config
-    
+
+    def _write_env_vars(self, updates: dict):
+        """Merge key=value pairs into .env (create if missing)."""
+        lines = []
+        if self.env_path.exists():
+            lines = self.env_path.read_text().splitlines()
+        keys_done = set()
+        out = []
+        for line in lines:
+            s = line.strip()
+            if not s or s.startswith("#"):
+                out.append(line)
+                continue
+            if "=" in line:
+                key, _, _ = line.partition("=")
+                key = key.strip()
+                if key in updates:
+                    out.append(f"{key}={updates[key]}")
+                    keys_done.add(key)
+                else:
+                    out.append(line)
+            else:
+                out.append(line)
+        for k, v in updates.items():
+            if k not in keys_done:
+                out.append(f"{k}={v}")
+        self.env_path.write_text("\n".join(out) + "\n")
+
     def update_config(self, new_config):
-        """Update configuration and save to file"""
-        self.config = new_config
-        success = self._save_config()
+        """Replace settings (secrets stripped; never stored in JSON)."""
+        merged = copy.deepcopy(new_config)
+        self._sanitize_settings(merged)
+        self._settings = merged
+        success = self._save_settings()
         if success:
             self._notify_callbacks()
         return success
-    
+
     def update_section(self, section, values):
-        """Update a specific section of the configuration"""
-        if section in self.config:
-            self.config[section].update(values)
-            success = self._save_config()
-            if success:
-                self._notify_callbacks()
-            return success
-        return False
-    
+        if section not in self._settings:
+            return False
+        if section == "telegram":
+            env_updates = {}
+            if values.get("token"):
+                env_updates["TELEGRAM_BOT_TOKEN"] = str(values["token"]).strip()
+            if values.get("chat_id"):
+                env_updates["TELEGRAM_CHAT_ID"] = str(values["chat_id"]).strip()
+            if env_updates:
+                self._write_env_vars(env_updates)
+                load_dotenv(self.env_path, override=True)
+            if "enabled" in values:
+                self._settings.setdefault("telegram", {})["enabled"] = values["enabled"]
+            if "cooldown" in values:
+                self._settings.setdefault("telegram", {})["cooldown"] = int(values["cooldown"])
+            success = self._save_settings()
+        else:
+            self._settings[section].update(values)
+            success = self._save_settings()
+        if success:
+            self._notify_callbacks()
+        return success
+
     def register_callback(self, callback):
-        """Register a callback function to be called when config changes"""
         if callback not in self.callbacks:
             self.callbacks.append(callback)
-    
+
     def _notify_callbacks(self):
-        """Notify all registered callbacks about config changes"""
+        cfg = self.get_config()
         for callback in self.callbacks:
             try:
-                callback(self.config)
+                callback(cfg)
             except Exception as e:
                 print(f"Error in config callback: {str(e)}")
-    
+
     def is_detection_enabled(self, detection_type):
-        """Check if a specific detection type is enabled"""
         try:
-            return self.config["detection"].get(detection_type, False)
-        except:
+            return self.get_config()["detection"].get(detection_type, False)
+        except Exception:
             return False
 
 
@@ -150,13 +227,12 @@ class TelegramService:
 
     def reload_config(self):
         """Reload configuration and update bot if needed."""
-        old_config = self.config
+        self.config_manager.reload_from_disk()
         self.config = self.config_manager.get_config()
-        if old_config["telegram"]["token"] != self.config["telegram"]["token"]:
-            self.token = self.config["telegram"]["token"]
-            self.chat_id = self.config["telegram"]["chat_id"]
-            self.cooldown = self.config["telegram"]["cooldown"]
-            self.setup_bot()
+        self.token = self.config["telegram"]["token"]
+        self.chat_id = self.config["telegram"]["chat_id"]
+        self.cooldown = self.config["telegram"]["cooldown"]
+        self.setup_bot()
 
     def setup_bot(self):
         """Initialize Telegram bot with current configuration."""
@@ -173,7 +249,7 @@ class TelegramService:
                 .build()
             )
             self.bot = self.application.bot
-            print(f"Telegram bot initialized with token: {self.token[:5]}...")
+            print(f"{Colors.GREEN}Telegram bot initialized.{Colors.RESET}")
         except Exception as e:
             print(f"Error initializing Telegram bot: {e}")
             self.bot = None
@@ -184,7 +260,7 @@ class TelegramService:
         return (
             self.config["telegram"]["enabled"]
             and self.bot is not None
-            and self.chat_id is not None
+            and bool(self.chat_id)
         )
 
     def can_send_notification(self, notification_type):
@@ -396,8 +472,6 @@ class Camera:
             self.cap.release()
             self.cap = None
 
-PROJECT_ROOT = Path(__file__).resolve().parent
-
 
 def resolve_model_path(model_path: str) -> str:
     """Resolve YOLO export path relative to this file's project root."""
@@ -559,7 +633,7 @@ class MQ2Sensor:
 
 # Main detection system
 class DetectionSystem:
-    def __init__(self, config_path="config.json"):
+    def __init__(self, settings_path="settings.json"):
         # Clean up old face images on startup
         self.cleanup_old_images()
         
@@ -571,7 +645,7 @@ class DetectionSystem:
         time.sleep(2)  
         
         # Initialize configuration and load the system config
-        self.config_manager = ConfigManager(config_path)
+        self.config_manager = ConfigManager(settings_path)
         self.config = self.config_manager.get_config()
         
         # Use streaming URL if provided, otherwise fall back to the local camera index.
@@ -1144,10 +1218,10 @@ class DetectionSystem:
 detection_system = None
 
 # Function to initialize the detection system
-def init_detection_system(config_path="config.json"):
+def init_detection_system(settings_path="settings.json"):
     global detection_system
     if detection_system is None:
-        detection_system = DetectionSystem(config_path)
+        detection_system = DetectionSystem(settings_path)
     return detection_system
 
 # Function to start the detection system in a separate thread

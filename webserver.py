@@ -61,13 +61,13 @@ connected_clients = 0
 @app.route('/')
 def index():
     """Render the main dashboard page with camera URL from config"""
-    camera_url = detection_system.config_manager.get_config()["system"].get("camera_url", "http://192.168.1.225:5000")
+    camera_url = detection_system.config_manager.get_public_config()["system"].get("camera_url", "")
     return render_template('index.html', camera_url=camera_url)
 
 @app.route('/api/config', methods=['GET'])
 def get_config():
     """Get current configuration"""
-    return jsonify(detection_system.config_manager.get_config())
+    return jsonify(detection_system.config_manager.get_public_config())
 
 @app.route('/api/config', methods=['POST'])
 def update_config():

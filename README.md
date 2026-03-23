@@ -1,6 +1,8 @@
 # Inferno (Blazetection)
 
-Real-time fire, smoke, motion, and face detection with a web dashboard, Telegram alerts, and optional Raspberry Pi hardware (camera, MQ2, alarm). This repository is structured so reviewers can find the model, configuration, and entry points quickly.
+Real-time fire, smoke, motion, and face detection with a web dashboard, Telegram alerts, and optional Raspberry Pi hardware (camera, MQ2, alarm).
+
+**Secrets never go in JSON.** Telegram credentials live in a **`.env`** file. **`settings.json`** only contains non-sensitive options (detection toggles, intervals, camera URL, model path).
 
 ---
 
@@ -10,22 +12,25 @@ Real-time fire, smoke, motion, and face detection with a web dashboard, Telegram
 git clone https://github.com/OliseNS/Inferno.git
 cd Inferno
 python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install -r requirements.txt
+cp .env.example .env
+# Edit .env: set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID if you use Telegram
 ```
 
-1. Copy `config.example.json` to `config.json` and set `telegram` / `camera_url` as needed (or use the dashboard after launch).
-2. Run the full stack (dashboard + detection):
+Run the full stack (dashboard + detection):
 
 ```bash
 python webserver.py
 ```
 
-Open `http://<host>:8080/`. Detection-only (no web UI):
+Open `http://<host>:8080/`. Headless detection only:
 
 ```bash
 python detection_system.py
 ```
+
+On first run, if `settings.json` is missing, defaults are created. Adjust detection toggles and `system.model_path` in **`settings.json`** (safe to commit). Enable Telegram in the dashboard or set `telegram.enabled` in **`settings.json`** after **`TELEGRAM_*`** are set in **`.env`**.
 
 ---
 
@@ -33,42 +38,45 @@ python detection_system.py
 
 | Path | Purpose |
 |------|---------|
-| `webserver.py` | Flask app: dashboard, API, starts detection in a background thread |
-| `detection_system.py` | Camera, YOLO, MediaPipe face mesh, motion, Telegram, alarm |
-| `config.json` / `config.example.json` | Runtime settings (copy example → `config.json` for local secrets) |
-| `models/yolov8-fire-smoke-ncnn/` | Ultralytics YOLOv8 **NCNN export** for fire/smoke (`model.ncnn.param`, `model.ncnn.bin`, `metadata.yaml`) |
+| `webserver.py` | Flask app: dashboard, API, background detection |
+| `detection_system.py` | Camera, YOLO, MediaPipe, motion, Telegram, alarm |
+| `settings.json` | Non-secret runtime options (committed template; copy from `settings.example.json` if needed) |
+| `.env` | **Secrets only** — `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (create from `.env.example`, never commit) |
+| `models/yolov8-fire-smoke-ncnn/` | YOLOv8 NCNN export for fire/smoke |
 | `static/`, `templates/` | Dashboard assets |
-| `streaming_server/` | Optional MJPEG helper (`server.py` on port 5000) — point `camera_url` at it if needed |
-| `scripts/ncnn_smoke_test.py` | Optional NCNN sanity check (requires `ncnn` + `torch`; not used in production) |
+| `streaming_server/` | Optional MJPEG server (`server.py`, port 5000) |
+| `scripts/ncnn_smoke_test.py` | Optional NCNN check (requires `ncnn` + `torch`) |
 
-The detection pipeline loads the model via [Ultralytics](https://docs.ultralytics.com/) using `system.model_path` in `config.json` (default: `models/yolov8-fire-smoke-ncnn`). You can point it at another exported folder or a `.pt` file.
+`system.model_path` in `settings.json` points at the YOLO export (default: `models/yolov8-fire-smoke-ncnn`). Override with another folder or `.pt` path.
+
+---
+
+## Environment variables
+
+| Variable | Description |
+|----------|-------------|
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token from [@BotFather](https://t.me/BotFather) |
+| `TELEGRAM_CHAT_ID` | Destination chat or group ID |
+
+The dashboard can append/update these in `.env` when you save token/chat ID (non-empty fields only).
 
 ---
 
 ## Features
 
-- **Fire, smoke, motion, face** — YOLO + MediaPipe face mesh + motion heuristic  
-- **Web dashboard** — live stats, toggles, TTS, Telegram test, alarm stop  
-- **Telegram** — alerts and images (configure token + chat ID in config or UI)  
-- **Alarm** — local audio (`alarm.wav`) on repeated critical detections  
-- **MQ2** — optional GPIO smoke/gas input on Raspberry Pi  
+- Fire, smoke, motion, face detection (YOLO + MediaPipe + motion heuristic)  
+- Web dashboard with toggles, TTS, Telegram test, alarm stop  
+- Telegram alerts (credentials from `.env` only)  
+- Local alarm audio (`alarm.wav`)  
+- Optional MQ2 on Raspberry Pi (`gpiozero`)  
 
 ---
 
 ## Requirements
 
-- Python 3.10+ recommended  
-- Webcam or IP / MJPEG stream compatible with OpenCV  
-- Raspberry Pi optional (GPIO, `gpiozero` for MQ2)  
-
----
-
-## Configuration
-
-- **`system.model_path`** — YOLO weights (NCNN export directory or `.pt`).  
-- **`system.camera_index`** — Local camera when `camera_url` is empty.  
-- **`system.camera_url`** — HTTP MJPEG or stream URL (e.g. from `streaming_server/server.py`).  
-- **`telegram.*`** — Bot token and chat ID; keep these out of public forks (use `config.example.json` as a template).  
+- Python 3.10+  
+- Webcam or OpenCV-compatible stream  
+- Raspberry Pi optional  
 
 ---
 

@@ -25,6 +25,6 @@ voices/
 .DS_Store
 Thumbs.db
 
-# Secrets (copy config.example.json to config.json and fill in locally)
-# Uncomment if you prefer not to commit config.json:
-# config.json
+# Secrets — copy .env.example to .env (never commit .env)
+.env
+.env.local

@@ -154,9 +154,18 @@ function updateConfigUI() {
     faceToggle.checked = config.detection?.face ?? true;
 
     telegramToggle.checked = config.telegram?.enabled ?? false;
-    telegramToken.value = config.telegram?.token ?? '';
-    telegramChatId.value = config.telegram?.chat_id ?? '';
+    telegramToken.value = '';
+    telegramChatId.value = '';
     telegramCooldown.value = config.telegram?.cooldown ?? 30;
+    if (config.telegram?.credentials_configured) {
+        telegramToken.placeholder =
+            'Credentials in .env — enter new value to replace';
+        telegramChatId.placeholder =
+            'Credentials in .env — enter new value to replace';
+    } else {
+        telegramToken.placeholder = 'Enter Telegram bot token';
+        telegramChatId.placeholder = 'Enter Telegram chat ID';
+    }
 }
 
 // Fetch system status from server
