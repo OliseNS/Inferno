@@ -42,12 +42,12 @@ On first run, if `settings.json` is missing, defaults are created. Adjust detect
 | `detection_system.py` | Camera, YOLO, MediaPipe, motion, Telegram, alarm |
 | `settings.json` | Non-secret runtime options (committed template; copy from `settings.example.json` if needed) |
 | `.env` | **Secrets only** — `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (create from `.env.example`, never commit) |
-| `models/yolov8-fire-smoke-ncnn/` | YOLOv8 NCNN export for fire/smoke |
+| `models/fire_smoke_yolov8_ncnn_model/` | YOLOv8 NCNN export for fire/smoke (folder name must end with `_ncnn_model` for Ultralytics) |
 | `static/`, `templates/` | Dashboard assets |
 | `streaming_server/` | Optional MJPEG server (`server.py`, port 5000) |
 | `scripts/ncnn_smoke_test.py` | Optional NCNN check (requires `ncnn` + `torch`) |
 
-`system.model_path` in `settings.json` points at the YOLO export (default: `models/yolov8-fire-smoke-ncnn`). Override with another folder or `.pt` path.
+`system.model_path` in `settings.json` points at the YOLO export (default: `models/fire_smoke_yolov8_ncnn_model`). NCNN exports must live in a directory whose name ends with `_ncnn_model`. Override with another folder or `.pt` path.
 
 ---
 

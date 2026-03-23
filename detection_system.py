@@ -71,7 +71,7 @@ class ConfigManager:
             "system": {
                 "camera_index": 0,
                 "camera_url": "",
-                "model_path": "models/yolov8-fire-smoke-ncnn",
+                "model_path": "models/fire_smoke_yolov8_ncnn_model",
                 "detection_interval": 0.5,
                 "face_save_interval": 1.0,
                 "alarm_threshold": 3,
@@ -666,7 +666,7 @@ class DetectionSystem:
         
         # Initialize detectors (Ultralytics YOLO — NCNN export folder or .pt path)
         model_path = self.config["system"].get(
-            "model_path", "models/yolov8-fire-smoke-ncnn"
+            "model_path", "models/fire_smoke_yolov8_ncnn_model"
         )
         self.object_detector = YOLODetector(resolve_model_path(model_path))
         self.motion_detector = MotionDetector()

@@ -10,7 +10,7 @@ import ncnn
 import torch
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-MODEL_DIR = PROJECT_ROOT / "models" / "yolov8-fire-smoke-ncnn"
+MODEL_DIR = PROJECT_ROOT / "models" / "fire_smoke_yolov8_ncnn_model"
 
 
 def test_inference():
