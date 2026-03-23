@@ -71,11 +71,12 @@ class ConfigManager:
             "system": {
                 "camera_index": 0,
                 "camera_url": "",
-                "model_path": "models/fire_smoke_yolov8_ncnn_model",
+                "model_path": "models/fire_smoke_yolo11_ncnn_model",
                 "detection_interval": 0.5,
                 "face_save_interval": 1.0,
                 "alarm_threshold": 3,
                 "max_saved_faces": 50,
+                "show_bounding_boxes": True,
             },
         }
 
@@ -648,11 +649,17 @@ class DetectionSystem:
         self.config_manager = ConfigManager(settings_path)
         self.config = self.config_manager.get_config()
         
-        # Use streaming URL if provided, otherwise fall back to the local camera index.
-        camera_source = self.config["system"].get("camera_url")
-        if camera_source:
-            print(f"Using streaming URL as camera source: {camera_source}")
-            self.camera = Camera(camera_source)
+        # Prefer camera_url: HTTP/MJPEG string, or a numeric string for device index (e.g. "1").
+        raw_url = self.config["system"].get("camera_url")
+        cam_url = (str(raw_url).strip() if raw_url is not None else "")
+        if cam_url:
+            if cam_url.isdigit():
+                idx = int(cam_url)
+                print(f"{Colors.CYAN}Using camera index from camera_url: {idx}{Colors.RESET}")
+                self.camera = Camera(idx)
+            else:
+                print(f"{Colors.CYAN}Using streaming URL as camera source: {cam_url}{Colors.RESET}")
+                self.camera = Camera(cam_url)
         else:
             camera_index = self.config["system"]["camera_index"]
             self.camera = Camera(camera_index)
@@ -664,9 +671,9 @@ class DetectionSystem:
         self.running = False
         self.face_count = 0
         
-        # Initialize detectors (Ultralytics YOLO — NCNN export folder or .pt path)
+        # Initialize detectors (Ultralytics YOLO11 — NCNN export folder or .pt path)
         model_path = self.config["system"].get(
-            "model_path", "models/fire_smoke_yolov8_ncnn_model"
+            "model_path", "models/fire_smoke_yolo11_ncnn_model"
         )
         self.object_detector = YOLODetector(resolve_model_path(model_path))
         self.motion_detector = MotionDetector()
@@ -753,11 +760,11 @@ class DetectionSystem:
         self.DETECTION_INTERVAL = self.config["system"]["detection_interval"]
         self.FACE_SAVE_INTERVAL = self.config["system"]["face_save_interval"]
         self.ALARM_THRESHOLD = self.config["system"]["alarm_threshold"]
-        
+
         # Explicitly reload Telegram service config and reinitialize the bot
         self.telegram_service.reload_config()
-        
-        print(f"{Colors.CYAN}Configuration updated. Telegram status: {self.telegram_service.is_enabled()}{Colors.RESET}")
+
+        print(f"{Colors.CYAN}Configuration updated. Bounding boxes: {self.config['system'].get('show_bounding_boxes', True)}, Telegram: {self.telegram_service.is_enabled()}{Colors.RESET}")
     
     def process_object_detection(self, frame_resized, frame_original):
         
@@ -792,35 +799,42 @@ class DetectionSystem:
                 y1 = int(y1 * scale_y)
                 y2 = int(y2 * scale_y)
 
-                # Make the bounding box cooler with thicker lines and outline
-                line_thickness = 1
-                outline_color = (255, 255, 255)  # White outline
+                # Only draw bounding boxes if enabled in settings
+                show_boxes = self.config["system"].get("show_bounding_boxes", True)
+                if show_boxes:
+                    # Make the bounding box cooler with thicker lines and outline
+                    line_thickness = 3
+                    outline_color = (255, 255, 255)  # White outline
 
-                # Draw outline
-                cv2.rectangle(frame_original, (x1, y1), (x2, y2), outline_color, line_thickness + 2)
-                # Draw main box
-                cv2.rectangle(frame_original, (x1, y1), (x2, y2), box_color, line_thickness)
+                    # Draw outline
+                    cv2.rectangle(frame_original, (x1, y1), (x2, y2), outline_color, line_thickness + 2)
+                    # Draw main box
+                    cv2.rectangle(frame_original, (x1, y1), (x2, y2), box_color, line_thickness)
 
-                # Add text label
-                font = cv2.FONT_HERSHEY_SIMPLEX
-                font_scale = 0.7
-                text_color = (255, 255, 255)  # White text
-                text_thickness = 2
-                
-                # Get size of label to create a background
-                (text_width, text_height) = cv2.getTextSize(label, font, font_scale, text_thickness)[0]
-                
-                # Make sure the text background is within the image
-                text_x = x1
-                text_y = y1 - text_height - 5
-                if text_y < 0:
-                    text_y = y1 + text_height + 5
-                
-                # Draw a filled rectangle behind the text
-                cv2.rectangle(frame_original, (text_x, text_y - text_height - 5), (text_x + text_width, text_y + 5), box_color, -1)
+                    # Add text label
+                    font = cv2.FONT_HERSHEY_SIMPLEX
+                    font_scale = 0.7
+                    text_color = (255, 255, 255)  # White text
+                    text_thickness = 2
 
-                # Put the text onto the frame
-                cv2.putText(frame_original, label, (text_x, text_y), font, font_scale, text_color, text_thickness, cv2.LINE_AA)
+                    # Get size of label to create a background
+                    (text_width, text_height) = cv2.getTextSize(label, font, font_scale, text_thickness)[0]
+
+                    # Make sure the text background is within the image
+                    text_x = x1
+                    text_y = y1 - text_height - 5
+                    if text_y < 0:
+                        text_y = y1 + text_height + 5
+
+                    # Draw a filled rectangle behind the text
+                    cv2.rectangle(frame_original, (text_x, text_y - text_height - 5), (text_x + text_width, text_y + 5), box_color, -1)
+
+                    # Put the text onto the frame
+                    cv2.putText(frame_original, label, (text_x, text_y), font, font_scale, text_color, text_thickness, cv2.LINE_AA)
+
+                    print(f"  {Colors.YELLOW}Drawing bbox at ({x1},{y1})-({x2},{y2}) for {label}{Colors.RESET}")
+                else:
+                    print(f"  {Colors.YELLOW}Skipping bbox drawing (disabled in settings){Colors.RESET}")
 
                 # Save the full frame with bounding box
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -852,10 +866,6 @@ class DetectionSystem:
                 
                 # Increment frames processed
                 self.frames_processed += 1
-
-                # Store the latest frame for sharing
-                with self.frame_lock:
-                    self.latest_frame = frame.copy()
 
                 current_time = time.time()
                 
@@ -907,6 +917,10 @@ class DetectionSystem:
                             print(f"{Colors.GREEN}No detections, status reset to Normal{Colors.RESET}")
                     else:
                         self.no_detection_count = 0
+
+                # Publish frame for MJPEG UI after overlays (same frame the model drew on)
+                with self.frame_lock:
+                    self.latest_frame = frame.copy()
                 
         except KeyboardInterrupt:
             print(f"\n{Colors.YELLOW}Exiting program...{Colors.RESET}")

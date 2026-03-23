@@ -3,6 +3,7 @@ const fireToggle = document.getElementById('fire-toggle');
 const smokeToggle = document.getElementById('smoke-toggle');
 const motionToggle = document.getElementById('motion-toggle');
 const faceToggle = document.getElementById('face-toggle');
+const bboxToggle = document.getElementById('bbox-toggle');
 const telegramToggle = document.getElementById('telegram-toggle');
 const telegramToken = document.getElementById('telegram-token');
 const telegramChatId = document.getElementById('telegram-chat-id');
@@ -152,6 +153,7 @@ function updateConfigUI() {
     smokeToggle.checked = config.detection?.smoke ?? true;
     motionToggle.checked = config.detection?.motion ?? true;
     faceToggle.checked = config.detection?.face ?? true;
+    bboxToggle.checked = config.system?.show_bounding_boxes ?? true;
 
     telegramToggle.checked = config.telegram?.enabled ?? false;
     telegramToken.value = '';
@@ -397,6 +399,7 @@ function setupEventListeners() {
     smokeToggle.addEventListener('change', () => updateDetectionConfig('smoke', smokeToggle.checked));
     motionToggle.addEventListener('change', () => updateDetectionConfig('motion', motionToggle.checked));
     faceToggle.addEventListener('change', () => updateDetectionConfig('face', faceToggle.checked));
+    bboxToggle.addEventListener('change', () => updateSystemConfig('show_bounding_boxes', bboxToggle.checked));
 
     saveTelegramBtn.addEventListener('click', saveTelegramSettings);
     testTelegramBtn.addEventListener('click', testTelegramConnection);
@@ -425,8 +428,15 @@ function setupEventListeners() {
         })
             .then((response) => response.json())
             .then((data) => {
-                if (data.success) {
-                    showNotification('Text is being spoken on the Raspberry Pi.', 'success');
+                if (data.success && data.audio_url) {
+                    showNotification('Playing speech...', 'success');
+
+                    // Play audio in browser
+                    const audio = new Audio(data.audio_url);
+                    audio.play().catch(err => {
+                        console.error('Audio playback error:', err);
+                        showNotification('Audio generated but playback failed', 'warning');
+                    });
 
                     // Add text to history only if it's not already present
                     if (!ttsHistory.includes(text)) {
@@ -438,6 +448,9 @@ function setupEventListeners() {
 
                     // Update the TTS history UI
                     updateTTSHistoryUI();
+
+                    // Clear input after successful generation
+                    ttsTextInput.value = '';
                 } else {
                     showNotification('Failed to process TTS.', 'error');
                 }
@@ -460,6 +473,32 @@ function updateDetectionConfig(type, enabled) {
             }
         })
         .catch(() => showNotification('Error updating detection settings', 'error'));
+}
+
+// Update system configuration
+function updateSystemConfig(key, value) {
+    console.log(`Updating system config: ${key} = ${value}`);
+    fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ section: 'system', values: { [key]: value } }),
+    })
+        .then((response) => response.json())
+        .then((data) => {
+            if (data.success) {
+                const message = key === 'show_bounding_boxes' ?
+                    (value ? 'Bounding boxes enabled' : 'Bounding boxes hidden') :
+                    'Setting updated';
+                showNotification(message, 'success');
+                console.log('System config updated successfully');
+            } else {
+                showNotification('Failed to update setting', 'error');
+            }
+        })
+        .catch((err) => {
+            console.error('Error updating setting:', err);
+            showNotification('Error updating setting', 'error');
+        });
 }
 
 // Save Telegram settings
@@ -580,8 +619,14 @@ function updateTTSHistoryUI() {
             })
                 .then((response) => response.json())
                 .then((data) => {
-                    if (data.success) {
+                    if (data.success && data.audio_url) {
                         showNotification(`Replaying: "${text}"`, 'success');
+
+                        // Play audio in browser
+                        const audio = new Audio(data.audio_url);
+                        audio.play().catch(err => {
+                            console.error('Audio playback error:', err);
+                        });
                     } else {
                         showNotification('Failed to replay TTS.', 'error');
                     }
@@ -607,8 +652,20 @@ function refreshHeaderStats() {
 }
 
 
+// Check if browser is Firefox and show warning
+function checkBrowser() {
+    const isFirefox = navigator.userAgent.toLowerCase().indexOf('firefox') > -1;
+    if (isFirefox) {
+        const warning = document.getElementById('browser-warning');
+        if (warning) {
+            warning.classList.add('show');
+        }
+    }
+}
+
 // Initialize the dashboard when the page loads
 document.addEventListener('DOMContentLoaded', () => {
+    checkBrowser();
     initDashboard();
     refreshHeaderStats();
 });

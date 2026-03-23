@@ -6,25 +6,26 @@
     <title>Blazetection Dashboard</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <style>
-        /* Main Styles - Optimized for Pi */
+        /* Clean Professional Dashboard Design */
         :root {
-            --primary-color: #4361ee;
-            --primary-light: #4895ef;
-            --primary-dark: #3f37c9;
-            --danger-color: #e63946;
-            --success-color: #2a9d8f;
-            --warning-color: #f9c74f;
-            --info-color: #48cae4;
-            --dark-color: #1d3557;
-            --light-color: #f8f9fa;
-            --gray-color: #6c757d;
-            --gray-light: #dee2e6;
-            --gray-dark: #495057;
+            --primary-color: #2563eb;
+            --primary-light: #3b82f6;
+            --primary-dark: #1e40af;
+            --danger-color: #dc2626;
+            --success-color: #16a34a;
+            --warning-color: #ea580c;
+            --info-color: #0891b2;
+            --dark-color: #1f2937;
+            --light-color: #f9fafb;
+            --gray-color: #6b7280;
+            --gray-light: #e5e7eb;
+            --gray-dark: #374151;
             --card-bg: #ffffff;
-            --body-bg: #f0f4f8;
-            --border-radius: 10px;
+            --body-bg: #f3f4f6;
+            --border-radius: 8px;
             --border-radius-sm: 6px;
-            --box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) ;
+            --box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+            --box-shadow-lg: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
             --transition: all 0.2s ease;
             --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
         }
@@ -43,6 +44,7 @@
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
             padding-bottom: 20px;
+            min-height: 100vh;
         }
 
         .container {
@@ -57,13 +59,13 @@
             position: sticky;
             top: 0;
             z-index: 1000;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            box-shadow: var(--box-shadow);
             background-color: white;
             justify-content: space-between;
             align-items: center;
             margin-bottom: 20px;
-            padding: 15px 20px;
-            background-color: white;
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--gray-light);
         }
 
         .header-left {
@@ -72,10 +74,11 @@
         }
 
         .header-left h1 {
-            font-size: 22px;
+            font-size: 24px;
             color: var(--dark-color);
-            font-weight: 600;
+            font-weight: 700;
             margin-right: 15px;
+            letter-spacing: -0.3px;
         }
 
         .header-right {
@@ -88,11 +91,12 @@
         #status-indicator {
             display: flex;
             align-items: center;
-            padding: 6px 14px;
+            padding: 8px 16px;
             border-radius: 20px;
-            font-weight: 500;
+            font-weight: 600;
             font-size: 14px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            box-shadow: var(--box-shadow);
+            transition: var(--transition);
         }
 
         .status-normal {
@@ -107,12 +111,12 @@
 
         .status-smoke {
             background-color: var(--warning-color);
-            color: #333;
+            color: #fff;
         }
 
         .status-person {
             background-color: var(--info-color);
-            color: #333;
+            color: #fff;
         }
 
         #status-icon {
@@ -129,10 +133,12 @@
             display: flex;
             align-items: center;
             background-color: var(--light-color);
-            padding: 6px 12px;
-            border-radius: 20px;
+            padding: 8px 14px;
+            border-radius: 16px;
             font-size: 13px;
             color: var(--dark-color);
+            font-weight: 500;
+            border: 1px solid var(--gray-light);
         }
 
         .stat-item i {
@@ -184,16 +190,16 @@
             height: 100%;
             display: flex;
             flex-direction: column;
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            transition: var(--transition);
+            border: 1px solid var(--gray-light);
         }
 
         .card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+            box-shadow: var(--box-shadow-lg);
         }
 
         .card-header {
-            background: linear-gradient(to right, var(--primary-dark), var(--primary-color));
+            background-color: var(--primary-color);
             color: white;
             padding: 14px 18px;
             display: flex;
@@ -207,7 +213,7 @@
         }
 
         .card-header h2 {
-            font-size: 16px;
+            font-size: 15px;
             margin: 0;
             font-weight: 600;
         }
@@ -218,9 +224,27 @@
         }
 
         .card-body {
-            padding: 16px;
+            padding: 18px;
             flex: 1;
             overflow-y: auto;
+        }
+
+        /* Custom Scrollbar */
+        .card-body::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .card-body::-webkit-scrollbar-track {
+            background: var(--light-color);
+        }
+
+        .card-body::-webkit-scrollbar-thumb {
+            background: var(--gray-light);
+            border-radius: 3px;
+        }
+
+        .card-body::-webkit-scrollbar-thumb:hover {
+            background: var(--gray-color);
         }
 
         /* Video Card Styles */
@@ -229,15 +253,17 @@
             width: 100%;
             height: 0;
             padding-bottom: 56.25%; /* 16:9 aspect ratio */
-            background-color: #000;
+            background-color: #1f2937;
             overflow: hidden;
             border-radius: var(--border-radius-sm);
             display: flex;
             align-items: center;
             justify-content: center;
+            border: 1px solid var(--gray-light);
         }
         
-        .video-container iframe {
+        .video-container iframe,
+        .video-container img#live-feed {
             position: absolute;
             top: 0;
             left: 0;
@@ -253,24 +279,29 @@
             position: absolute;
             bottom: 15px;
             right: 15px;
-            background-color: rgba(0, 0, 0, 0.6);
+            background-color: rgba(0, 0, 0, 0.7);
             color: white;
             border: none;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
+            border-radius: 8px;
+            width: 44px;
+            height: 44px;
             display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            opacity: 0.7;
-            transition: opacity 0.2s ease;
+            opacity: 0;
+            transition: var(--transition);
             z-index: 10;
+            backdrop-filter: blur(4px);
         }
-        
-        .fullscreen-button:hover {
+
+        .video-container:hover .fullscreen-button {
             opacity: 1;
+        }
+
+        .fullscreen-button:hover {
             background-color: var(--primary-color);
+            transform: scale(1.05);
         }
 
         /* TTS Card */
@@ -282,54 +313,79 @@
 
         .tts-input {
             display: flex;
-            margin-bottom: 10px;
+            margin-bottom: 12px;
+            gap: 10px;
         }
 
         .tts-input input {
             flex: 1;
-            padding: 10px;
+            padding: 10px 14px;
             border: 1px solid var(--gray-light);
             border-radius: var(--border-radius-sm);
             font-size: 14px;
+            transition: var(--transition);
+        }
+
+        .tts-input input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
         }
 
         .tts-input button {
-            margin-left: 10px;
-            padding: 0 15px;
+            padding: 0 16px;
             background-color: var(--primary-color);
             color: white;
             border: none;
             border-radius: var(--border-radius-sm);
             cursor: pointer;
-            transition: background-color 0.2s ease;
+            transition: var(--transition);
+            font-weight: 600;
         }
 
         .tts-input button:hover {
             background-color: var(--primary-dark);
         }
 
+        .tts-input button:active {
+            transform: scale(0.95);
+        }
+
         .tts-history {
             flex: 1;
             background-color: var(--light-color);
             border-radius: var(--border-radius-sm);
-            padding: 10px;
+            padding: 12px;
             overflow-y: auto;
+            border: 1px solid var(--gray-light);
         }
 
         .tts-history-item {
             background-color: white;
-            padding: 8px 12px;
+            padding: 10px 14px;
             border-radius: var(--border-radius-sm);
             margin-bottom: 8px;
             font-size: 14px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            box-shadow: var(--box-shadow);
+            cursor: pointer;
+            transition: var(--transition);
+            border: 1px solid transparent;
+        }
+
+        .tts-history-item:hover {
+            border-color: var(--primary-color);
+            box-shadow: var(--box-shadow-lg);
+        }
+
+        .tts-history-item:active {
+            transform: scale(0.98);
         }
 
         /* Faces Gallery */
         .faces-gallery {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
-            gap: 8px;
+            grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+            gap: 10px;
             max-height: 300px;
             overflow-y: auto;
         }
@@ -339,8 +395,16 @@
             border-radius: var(--border-radius-sm);
             overflow: hidden;
             box-shadow: var(--box-shadow);
-            height: 80px;
+            height: 90px;
             cursor: pointer;
+            transition: var(--transition);
+            border: 2px solid transparent;
+        }
+
+        .face-item:hover {
+            border-color: var(--primary-color);
+            box-shadow: var(--box-shadow-lg);
+            transform: scale(1.05);
         }
 
         .face-item img {
@@ -430,22 +494,29 @@
         /* Detection Gallery */
         .detection-gallery {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); /* Adjust size as needed */
-            gap: 10px;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 12px;
             max-height: 300px;
             overflow-y: auto;
-            padding: 10px;
         }
 
         .detection-item {
             position: relative;
             width: 100%;
-            padding-top: 100%; /* This ensures a square aspect ratio */
+            padding-top: 100%;
             border-radius: var(--border-radius-sm);
             overflow: hidden;
             box-shadow: var(--box-shadow);
             cursor: pointer;
             background-color: var(--gray-light);
+            transition: var(--transition);
+            border: 2px solid transparent;
+        }
+
+        .detection-item:hover {
+            border-color: var(--primary-color);
+            box-shadow: var(--box-shadow-lg);
+            transform: scale(1.05);
         }
 
         .detection-item img {
@@ -521,10 +592,17 @@
 
         /* Toggle Switches */
         .toggle-container {
-            margin-bottom: 12px;
+            margin-bottom: 10px;
             background-color: var(--light-color);
             border-radius: var(--border-radius-sm);
-            padding: 10px 14px;
+            padding: 12px 14px;
+            transition: var(--transition);
+            border: 1px solid var(--gray-light);
+        }
+
+        .toggle-container:hover {
+            background-color: #f3f4f6;
+            border-color: var(--gray-color);
         }
 
         .toggle {
@@ -539,6 +617,7 @@
             font-weight: 500;
             display: flex;
             align-items: center;
+            color: var(--dark-color);
         }
 
         .toggle-label i {
@@ -591,15 +670,15 @@
 
         .form-group label {
             display: block;
-            margin-bottom: 5px;
+            margin-bottom: 6px;
             font-weight: 500;
-            font-size: 14px;
+            font-size: 13px;
             color: var(--gray-dark);
         }
 
         .form-group input {
             width: 100%;
-            padding: 8px 10px;
+            padding: 10px 12px;
             border: 1px solid var(--gray-light);
             border-radius: var(--border-radius-sm);
             font-size: 14px;
@@ -608,32 +687,47 @@
 
         .form-group input:focus {
             outline: none;
-            border-color: var(--primary-light);
-            box-shadow: 0 0 0 2px rgba(72, 149, 239, 0.2);
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
         }
 
         .btn {
             display: inline-block;
-            padding: 8px 14px;
+            padding: 9px 16px;
             border: none;
             border-radius: var(--border-radius-sm);
             cursor: pointer;
             font-size: 14px;
-            font-weight: 500;
+            font-weight: 600;
             text-align: center;
             transition: var(--transition);
             background-color: var(--primary-color);
             color: white;
+            box-shadow: var(--box-shadow);
+        }
+
+        .btn:hover {
+            background-color: var(--primary-dark);
+        }
+
+        .btn:active {
+            transform: scale(0.98);
         }
 
         .btn-primary {
             background-color: var(--primary-color);
-            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: var(--primary-dark);
         }
 
         .btn-danger {
             background-color: var(--danger-color);
-            color: white;
+        }
+
+        .btn-danger:hover {
+            background-color: #b91c1c;
         }
 
         .btn i {
@@ -701,14 +795,75 @@
         /* Notification */
         #notification {
             position: fixed;
-            bottom: 20px;
-            right: 20px;
-            padding: 10px 16px;
-            border-radius: 8px;
+            bottom: 24px;
+            right: 24px;
+            padding: 12px 18px;
+            border-radius: var(--border-radius);
             color: white;
             font-weight: 500;
             z-index: 1001;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            box-shadow: var(--box-shadow-lg);
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(100px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        /* Browser Warning */
+        .browser-warning {
+            position: fixed;
+            top: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #fef3c7;
+            color: #92400e;
+            padding: 12px 24px;
+            border-radius: var(--border-radius);
+            box-shadow: var(--box-shadow-lg);
+            z-index: 999;
+            display: none;
+            align-items: center;
+            gap: 12px;
+            border: 1px solid #fcd34d;
+            max-width: 90%;
+        }
+
+        .browser-warning.show {
+            display: flex;
+            animation: slideDown 0.3s ease;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translate(-50%, -20px);
+            }
+            to {
+                opacity: 1;
+                transform: translate(-50%, 0);
+            }
+        }
+
+        .browser-warning i {
+            font-size: 20px;
+        }
+
+        .browser-warning button {
+            background: none;
+            border: none;
+            color: #92400e;
+            font-size: 20px;
+            cursor: pointer;
+            padding: 0;
+            margin-left: auto;
         }
 
         /* Responsive Adjustments */
@@ -787,6 +942,15 @@
     </style>
 </head>
 <body>
+    <!-- Browser Warning (Firefox) -->
+    <div id="browser-warning" class="browser-warning">
+        <i class="fas fa-exclamation-triangle"></i>
+        <div>
+            <strong>Firefox Detected:</strong> For the best experience, please use Chrome, Edge, or Brave browser. Firefox may have issues with video streaming and audio playback.
+        </div>
+        <button onclick="document.getElementById('browser-warning').classList.remove('show')">&times;</button>
+    </div>
+
     <div class="container">
         <!-- Header -->
         <header>
@@ -830,11 +994,11 @@
                     <div class="card-body" style="padding: 0;">
                         <div style="padding: 10px; background-color: var(--light-color); display: flex; align-items: center; gap: 10px;">
                             <label for="camera-url-input" style="font-size: 14px; font-weight: 500;">Camera URL:</label>
-                            <input type="text" id="camera-url-input" value="{{ camera_url }}" placeholder="Enter new camera URL" style="flex: 1; padding: 8px; border: 1px solid var(--gray-light); border-radius: var(--border-radius-sm);">
+                            <input type="text" id="camera-url-input" value="{{ camera_url }}" placeholder="Empty = built-in camera (this server /video_feed)" style="flex: 1; padding: 8px; border: 1px solid var(--gray-light); border-radius: var(--border-radius-sm);">
                             <button id="save-camera-url-btn" class="btn btn-primary">Save</button>
                         </div>
                         <div class="video-container" style="border-radius: 0 0 var(--border-radius-sm) var(--border-radius-sm);">
-                            <iframe src="{{ camera_url }}" title="Live Camera Feed" allowfullscreen></iframe>
+                            <img id="live-feed" src="{{ video_feed_url }}" alt="Live camera feed" />
                             <button id="fullscreen-btn" class="fullscreen-button" title="Enter Fullscreen">
                                 <i class="fas fa-expand"></i>
                             </button>
@@ -939,6 +1103,13 @@
                                 <span class="toggle-slider"></span>
                             </label>
                         </div>
+                        <div class="toggle-container">
+                            <label class="toggle">
+                                <span class="toggle-label"><i class="fas fa-border-all"></i>&nbsp;Show Bounding Boxes</span>
+                                <input type="checkbox" id="bbox-toggle" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
                         <div class="alarm-control">
                             <button id="stop-alarm-btn" class="btn btn-danger">
                                 <i class="fas fa-volume-mute"></i>&nbsp;Stop Alarm
@@ -1009,16 +1180,17 @@
 <script src="/static/main.js"></script>
 <script>
     document.getElementById("restart-system-btn").addEventListener("click", function () {
-        if (confirm("Are you sure you want to restart the system?")) {
+        if (confirm("Restart the detection subsystem? The dashboard will stay up; the video feed may pause briefly.")) {
             fetch('/api/restart', { method: 'POST' })
                 .then(response => {
                     if (response.ok) {
-                        alert("System is restarting...");
-                    } else {
-                        return response.json().then(data => {
-                            throw new Error(data.error || "Failed to restart the system.");
+                        return response.json().then(function (data) {
+                            alert(data.message || "Restart started.");
                         });
                     }
+                    return response.json().then(data => {
+                        throw new Error(data.error || "Failed to restart.");
+                    });
                 })
                 .catch(error => {
                     console.error("Error restarting the system:", error);
@@ -1027,42 +1199,37 @@
         }
     });
 
-    // Add this inside your existing script or with the other scripts
     document.getElementById('fullscreen-btn').addEventListener('click', function() {
-        const iframe = document.querySelector('.video-container iframe');
-        
-        if (iframe.requestFullscreen) {
-            iframe.requestFullscreen();
-        } else if (iframe.mozRequestFullScreen) { /* Firefox */
-            iframe.mozRequestFullScreen();
-        } else if (iframe.webkitRequestFullscreen) { /* Chrome, Safari & Opera */
-            iframe.webkitRequestFullscreen();
-        } else if (iframe.msRequestFullscreen) { /* IE/Edge */
-            iframe.msRequestFullscreen();
+        const el = document.getElementById('live-feed');
+        if (!el) return;
+        if (el.requestFullscreen) {
+            el.requestFullscreen();
+        } else if (el.mozRequestFullScreen) {
+            el.mozRequestFullScreen();
+        } else if (el.webkitRequestFullscreen) {
+            el.webkitRequestFullscreen();
+        } else if (el.msRequestFullscreen) {
+            el.msRequestFullscreen();
         }
     });
 
     document.getElementById('save-camera-url-btn').addEventListener('click', function () {
         const newCameraUrl = document.getElementById('camera-url-input').value.trim();
-        if (newCameraUrl) {
-            fetch('/api/config', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ section: 'system', values: { camera_url: newCameraUrl } }),
+        fetch('/api/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ section: 'system', values: { camera_url: newCameraUrl } }),
+        })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert(newCameraUrl ? 'Camera URL updated.' : 'Using built-in camera feed from this server.');
+                    location.reload();
+                } else {
+                    alert('Failed to update camera URL.');
+                }
             })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        alert('Camera URL updated successfully!');
-                        location.reload(); // Reload the page to apply the new URL
-                    } else {
-                        alert('Failed to update Camera URL.');
-                    }
-                })
-                .catch(() => alert('Error updating Camera URL.'));
-        } else {
-            alert('Please enter a valid Camera URL.');
-        }
+            .catch(() => alert('Error updating camera URL.'));
     });
 </script>
 

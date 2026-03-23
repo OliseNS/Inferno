@@ -14,6 +14,7 @@ faces.json
 detections/
 voices/
 *.mp3
+logs/*.log
 
 # IDE
 .idea/

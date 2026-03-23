@@ -1,22 +1,28 @@
 import os
+import sys
 import threading
 import time
 import queue
-from flask import Flask, render_template, request, jsonify, send_from_directory
 import subprocess
-import sys
-from gtts import gTTS  
+from pathlib import Path
 
-# Import the detection system
+_ROOT = Path(__file__).resolve().parent
+from inferno_logging import setup_logging
+
+setup_logging(_ROOT)
+
+import cv2
+import numpy as np
+from flask import Flask, Response, render_template, request, jsonify, send_from_directory
+from gtts import gTTS
+
+import detection_system as dsm
 from detection_system import init_detection_system, start_detection_system
 
 # Initialize Flask app
-app = Flask(__name__,
-            static_folder='static',
-            template_folder='templates')
+app = Flask(__name__, static_folder="static", template_folder="templates")
 
-
-# Initialize detection system
+# Initialize detection system (singleton in detection_system module)
 detection_system = init_detection_system()
 
 # Create a queue for TTS requests
@@ -58,11 +64,81 @@ detection_thread = None
 
 connected_clients = 0
 
-@app.route('/')
+# Cached JPEG used when the detector has not produced a frame yet (must yield quickly
+# so single-threaded dev servers are not blocked forever on /video_feed).
+_PLACEHOLDER_JPEG: bytes | None = None
+
+
+def _placeholder_jpeg() -> bytes:
+    global _PLACEHOLDER_JPEG
+    if _PLACEHOLDER_JPEG is None:
+        img = np.zeros((240, 320, 3), dtype=np.uint8)
+        cv2.putText(
+            img,
+            "Waiting for camera...",
+            (24, 125),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (200, 200, 200),
+            1,
+            cv2.LINE_AA,
+        )
+        ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 72])
+        _PLACEHOLDER_JPEG = buf.tobytes() if ok else b""
+    return _PLACEHOLDER_JPEG
+
+
+def _mjpeg_chunk(jpeg_bytes: bytes) -> bytes:
+    return b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg_bytes + b"\r\n"
+
+
+def _video_feed_url() -> str:
+    """Built-in MJPEG from detection thread, or external URL when configured."""
+    cam = (detection_system.config_manager.get_public_config()["system"].get("camera_url") or "").strip()
+    return cam if cam else "/video_feed"
+
+
+@app.route("/video_feed")
+def video_feed():
+    """MJPEG stream from the same frames the detector processes (with overlays)."""
+
+    def generate():
+        placeholder = _placeholder_jpeg()
+        # First chunk must be sent immediately so the handler never blocks without yielding.
+        yield _mjpeg_chunk(placeholder)
+        none_rounds = 0
+        while True:
+            frame = detection_system.get_latest_frame()
+            if frame is None:
+                time.sleep(0.05)
+                none_rounds += 1
+                # Keep stream alive if camera is slow; avoid hammering the client.
+                if none_rounds % 10 == 0:
+                    yield _mjpeg_chunk(placeholder)
+                continue
+            none_rounds = 0
+            ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 82])
+            if not ok:
+                continue
+            yield _mjpeg_chunk(buf.tobytes())
+
+    return Response(
+        generate(),
+        mimetype="multipart/x-mixed-replace; boundary=frame",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate", "Pragma": "no-cache"},
+    )
+
+
+@app.route("/")
 def index():
-    """Render the main dashboard page with camera URL from config"""
-    camera_url = detection_system.config_manager.get_public_config()["system"].get("camera_url", "")
-    return render_template('index.html', camera_url=camera_url)
+    """Render the main dashboard: built-in /video_feed unless camera_url is set."""
+    pub = detection_system.config_manager.get_public_config()
+    camera_url = (pub["system"].get("camera_url") or "").strip()
+    return render_template(
+        "index.html",
+        camera_url=camera_url,
+        video_feed_url=_video_feed_url(),
+    )
 
 @app.route('/api/config', methods=['GET'])
 def get_config():
@@ -117,7 +193,7 @@ def test_telegram():
 
 @app.route('/api/tts', methods=['POST'])
 def text_to_speech():
-    """Convert text to speech using pyttsx3"""
+    """Convert text to speech using gTTS and return audio file"""
     try:
         data = request.json
         text = data.get('text', '')
@@ -125,9 +201,30 @@ def text_to_speech():
         if not text:
             return jsonify({"success": False, "error": "No text provided"})
 
-        tts_queue.put(text)
+        # Generate audio file
+        voices_dir = os.path.join(os.getcwd(), 'voices')
+        os.makedirs(voices_dir, exist_ok=True)
 
-        return jsonify({"success": True, "message": "Text added to TTS queue"})
+        # Create unique filename
+        timestamp = time.time()
+        filename = f"tts_{int(timestamp)}.mp3"
+        filepath = os.path.join(voices_dir, filename)
+
+        # Generate speech using gTTS
+        tts = gTTS(text=text, lang='en')
+        tts.save(filepath)
+
+        # Also play on server if available
+        try:
+            tts_queue.put(text)
+        except:
+            pass
+
+        return jsonify({
+            "success": True,
+            "message": "Speech generated",
+            "audio_url": f"/voices/{filename}"
+        })
     except Exception as e:
         print(f"TTS Error: {str(e)}")
         return jsonify({"success": False, "error": str(e)})
@@ -169,38 +266,42 @@ def serve_face(filename):
     """Serve face images"""
     return send_from_directory('faces', filename)
 
-@app.route('/api/restart', methods=['POST'])
+@app.route('/voices/<path:filename>')
+def serve_voice(filename):
+    """Serve TTS audio files"""
+    return send_from_directory('voices', filename)
+
+@app.route("/api/restart", methods=["POST"])
 def restart_system():
-    """Restart the entire application (web server and detection system)"""
+    """Restart the detection pipeline in-process (Flask keeps running)."""
+    global detection_thread, detection_system
+
+    def _restart():
+        global detection_thread, detection_system
+        try:
+            tts_queue.put("Detection subsystem restarting.")
+        except Exception:
+            pass
+        try:
+            if dsm.detection_system is not None:
+                dsm.detection_system.running = False
+            if detection_thread is not None and detection_thread.is_alive():
+                detection_thread.join(timeout=25)
+            dsm.detection_system = None
+            detection_system = init_detection_system()
+            detection_thread = threading.Thread(target=detection_system.run, daemon=True)
+            detection_thread.start()
+        except Exception as e:
+            print(f"Restart Error: {e}")
+
     try:
-        # Announce restart via TTS
-        tts_queue.put("System is restarting. Please wait.")
-        
-        # Stop the detection system gracefully if it's running
-        global detection_thread
-        if detection_thread and detection_thread.is_alive():
-            detection_system.running = False
-            detection_thread.join(timeout=2)  # Wait for up to 2 seconds
-        
-        # Clean up resources
-        if detection_system:
-            detection_system.shutdown()
-        
-        # First send a response that the restart is in progress
-        response = jsonify({"success": True, "message": "System is restarting..."})
-        
-        # Schedule the restart after the response is sent
-        def restart_after_response():
-            time.sleep(1)  # Give time for the response to be sent
-            # Start a new process with the same command and arguments
-            subprocess.Popen([sys.executable] + sys.argv)
-            # Exit the current process
-            os._exit(0)
-        
-        threading.Thread(target=restart_after_response, daemon=True).start()
-        
-        return response
-        
+        threading.Thread(target=_restart, daemon=True).start()
+        return jsonify(
+            {
+                "success": True,
+                "message": "Detection system is restarting. The page stays up; video may flicker briefly.",
+            }
+        )
     except Exception as e:
         print(f"Restart Error: {str(e)}")
         return jsonify({"success": False, "error": str(e)}), 500
@@ -225,4 +326,6 @@ if __name__ == '__main__':
     print(f"Press Ctrl+C to exit")
 
     start_web_server()
-    app.run(host='0.0.0.0', port=8080)
+    # threaded=True: /video_feed is long-lived; without this the dev server can only
+    # handle one request at a time and the dashboard never loads while the stream connects.
+    app.run(host="0.0.0.0", port=8080, threaded=True, use_reloader=False)
