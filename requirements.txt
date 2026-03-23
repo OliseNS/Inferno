@@ -1,0 +1,19 @@
+# Core detection & vision
+opencv-python>=4.8.0
+ultralytics>=8.0.0
+mediapipe>=0.10.0
+scipy>=1.10.0
+numpy>=1.24.0
+
+# Web dashboard
+flask>=3.0.0
+gtts>=2.5.0
+
+# Notifications
+python-telegram-bot>=20.0
+
+# Optional: Raspberry Pi GPIO (MQ2 sensor)
+# gpiozero>=2.0
+
+# Optional: NCNN smoke test script only (scripts/ncnn_smoke_test.py)
+# pip install ncnn torch

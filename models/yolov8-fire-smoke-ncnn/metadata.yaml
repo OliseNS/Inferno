@@ -1,4 +1,4 @@
-description: Ultralytics best model trained on /datasets/newdatazip/data.yaml
+description: YOLOv8 fire/smoke detector (Ultralytics export to NCNN)
 author: Ultralytics
 date: '2025-03-25T02:22:39.105272'
 version: 8.3.96

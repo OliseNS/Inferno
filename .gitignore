@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.so
+.venv/
+venv/
+env/
+
+# Local / generated
+faces/
+faces.json
+detections/
+voices/
+*.mp3
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets (copy config.example.json to config.json and fill in locally)
+# Uncomment if you prefer not to commit config.json:
+# config.json

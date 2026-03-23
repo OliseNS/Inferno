@@ -1,123 +1,83 @@
-# Blazetection
+# Inferno (Blazetection)
 
-Blazetection is an intelligent real-time detection and alert system, primarily designed to run on devices like the Raspberry Pi. It combines advanced AI-based video analysis with hardware sensors to detect fire, smoke, motion, and faces, then delivers instant notifications and alarms via Telegram and on-device actions.
+Real-time fire, smoke, motion, and face detection with a web dashboard, Telegram alerts, and optional Raspberry Pi hardware (camera, MQ2, alarm). This repository is structured so reviewers can find the model, configuration, and entry points quickly.
+
+---
+
+## Quick start
+
+```bash
+git clone https://github.com/OliseNS/Inferno.git
+cd Inferno
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+1. Copy `config.example.json` to `config.json` and set `telegram` / `camera_url` as needed (or use the dashboard after launch).
+2. Run the full stack (dashboard + detection):
+
+```bash
+python webserver.py
+```
+
+Open `http://<host>:8080/`. Detection-only (no web UI):
+
+```bash
+python detection_system.py
+```
+
+---
+
+## Repository layout
+
+| Path | Purpose |
+|------|---------|
+| `webserver.py` | Flask app: dashboard, API, starts detection in a background thread |
+| `detection_system.py` | Camera, YOLO, MediaPipe face mesh, motion, Telegram, alarm |
+| `config.json` / `config.example.json` | Runtime settings (copy example → `config.json` for local secrets) |
+| `models/yolov8-fire-smoke-ncnn/` | Ultralytics YOLOv8 **NCNN export** for fire/smoke (`model.ncnn.param`, `model.ncnn.bin`, `metadata.yaml`) |
+| `static/`, `templates/` | Dashboard assets |
+| `streaming_server/` | Optional MJPEG helper (`server.py` on port 5000) — point `camera_url` at it if needed |
+| `scripts/ncnn_smoke_test.py` | Optional NCNN sanity check (requires `ncnn` + `torch`; not used in production) |
+
+The detection pipeline loads the model via [Ultralytics](https://docs.ultralytics.com/) using `system.model_path` in `config.json` (default: `models/yolov8-fire-smoke-ncnn`). You can point it at another exported folder or a `.pt` file.
 
 ---
 
 ## Features
 
-- **Fire, Smoke, Motion & Face Detection**: Utilizes YOLO, Mediapipe, and custom logic to identify safety risks and people in camera feeds.
-- **Real-Time Video Dashboard**: Web-based live-feed interface with processed frame stats, recent detections, and system status.
-- **Text-to-Speech (TTS)**: Input text on the dashboard to play audio through the device's speakers, with TTS history and replay.
-- **Telegram Integration**: Sends instant alerts, images, and allows test messages via Telegram bots.
-- **Alarm System**: Triggers a local alarm sound when critical detections occur, with remote stop functionality.
-- **MQ2 Gas Sensor Support**: Monitors smoke/gas levels and contributes to alarm triggers.
-- **Configurable**: Easily enable/disable detection modules and adjust Telegram settings via the web UI.
+- **Fire, smoke, motion, face** — YOLO + MediaPipe face mesh + motion heuristic  
+- **Web dashboard** — live stats, toggles, TTS, Telegram test, alarm stop  
+- **Telegram** — alerts and images (configure token + chat ID in config or UI)  
+- **Alarm** — local audio (`alarm.wav`) on repeated critical detections  
+- **MQ2** — optional GPIO smoke/gas input on Raspberry Pi  
 
 ---
 
-## Installation
+## Requirements
 
-> **Requirements:**  
-> - Raspberry Pi (or similar device, recommended for GPIO/MQ2 support)  
-> - Python 3.8+  
-> - Node.js (for static assets, optional)  
-> - Camera compatible with OpenCV  
-> - MQ2 gas sensor (optional)  
-> - Telegram bot token and chat ID (for notifications)
-
-1. **Clone the Repository:**
-    ```bash
-    git clone https://github.com/OliseNS/Blazetection.git
-    cd Blazetection
-    ```
-
-2. **Install Python Dependencies:**
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-3. **(Optional) Install hardware libraries:**
-    ```bash
-    # GPIO support for Raspberry Pi
-    sudo apt-get install python3-gpiozero
-    ```
-
-4. **Configure Your Settings:**
-    - Edit `config.json` to set detection intervals, alarm thresholds, Telegram credentials, etc.
-    - Or use the web dashboard to adjust Telegram and detection settings.
-
-5. **Run the System:**
-    ```bash
-    python detection_system.py
-    ```
-    The dashboard will be available at `http://<your-device-ip>:<port>/`.
+- Python 3.10+ recommended  
+- Webcam or IP / MJPEG stream compatible with OpenCV  
+- Raspberry Pi optional (GPIO, `gpiozero` for MQ2)  
 
 ---
 
-## Usage
+## Configuration
 
-- **Dashboard:**  
-  Access the web interface to view:
-  - Live camera feed.
-  - Recent faces & detections.
-  - System statistics (uptime, frames processed, status).
-  - TTS input & history.
-  - Enable/disable detection modules (fire, smoke, motion, face).
-  - Configure and test Telegram alerts.
-  - Stop the alarm remotely.
-
-- **Telegram Alerts:**  
-  Add your bot to a Telegram group or chat and set the `token` and `chat_id` in the dashboard or config file.
-
-- **TTS:**  
-  Enter a message in the dashboard for spoken alerts via the device's audio output.
-
----
-
-## Hardware Integration
-
-- **Camera:**  
-  Supports USB, Pi Camera, or any OpenCV-compatible source.
-
-- **MQ2 Sensor:**  
-  Wired to GPIO (default: pin 17), used for smoke/gas detection.
-
----
-
-## Project Structure
-
-- `detection_system.py` &mdash; Main backend for detection logic, alarm management, and integration.
-- `static/` &mdash; JavaScript, CSS, and assets for the dashboard.
-- `templates/` &mdash; HTML templates for the web UI.
-- `config.json` &mdash; System and notification configuration.
-- `requirements.txt` &mdash; Python dependencies.
+- **`system.model_path`** — YOLO weights (NCNN export directory or `.pt`).  
+- **`system.camera_index`** — Local camera when `camera_url` is empty.  
+- **`system.camera_url`** — HTTP MJPEG or stream URL (e.g. from `streaming_server/server.py`).  
+- **`telegram.*`** — Bot token and chat ID; keep these out of public forks (use `config.example.json` as a template).  
 
 ---
 
 ## Author
 
-- **OliseNS**  
-  [GitHub Profile](https://github.com/OliseNS)
+**OliseNS** — [GitHub](https://github.com/OliseNS)
 
 ---
 
 ## License
 
-This project currently does not specify a license. Please get in touch with the author for usage permissions.
-
----
-
-## Contributing
-
-Contributions are welcome! Please fork the repository and create a pull request.
-
----
-
-## Acknowledgements
-
-- [YOLO](https://github.com/ultralytics/yolov5) for object detection.
-- [Mediapipe](https://google.github.io/mediapipe/) for face detection using face mesh.
-- [Telegram Bot API](https://core.telegram.org/bots/api)
-
----
+No license file is included yet; contact the author for usage terms.

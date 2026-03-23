@@ -3,6 +3,7 @@ import cv2
 import os
 import time
 import json
+from pathlib import Path
 from ultralytics import YOLO
 import mediapipe as mp
 from scipy.spatial.distance import euclidean
@@ -61,6 +62,7 @@ class ConfigManager:
                     },
                     "system": {
                         "camera_index": 0,
+                        "model_path": "models/yolov8-fire-smoke-ncnn",
                         "detection_interval": 0.5,
                         "face_save_interval": 1.0,
                         "alarm_threshold": 3,
@@ -394,11 +396,22 @@ class Camera:
             self.cap.release()
             self.cap = None
 
+PROJECT_ROOT = Path(__file__).resolve().parent
+
+
+def resolve_model_path(model_path: str) -> str:
+    """Resolve YOLO export path relative to this file's project root."""
+    p = Path(model_path)
+    if not p.is_absolute():
+        p = PROJECT_ROOT / p
+    return str(p)
+
+
 # YOLO detector
 class YOLODetector:
     def __init__(self, model_path, conf_threshold=0.65, iou_threshold=0.55):
         """Initialize YOLO object detector"""
-        self.model = YOLO(model_path)
+        self.model = YOLO(model_path, task="detect")
         self.CONF_THRESHOLD = conf_threshold
         self.IOU_THRESHOLD = iou_threshold
     
@@ -577,8 +590,11 @@ class DetectionSystem:
         self.running = False
         self.face_count = 0
         
-        # Initialize detectors
-        self.object_detector = YOLODetector("model_ncnn_model")
+        # Initialize detectors (Ultralytics YOLO — NCNN export folder or .pt path)
+        model_path = self.config["system"].get(
+            "model_path", "models/yolov8-fire-smoke-ncnn"
+        )
+        self.object_detector = YOLODetector(resolve_model_path(model_path))
         self.motion_detector = MotionDetector()
         self.face_detector = FaceDetector(min_detection_confidence=0.8)
         
