@@ -1,4 +1,6 @@
+import queue
 import threading
+
 import cv2
 import os
 import time
@@ -11,6 +13,15 @@ import mediapipe as mp
 from scipy.spatial.distance import euclidean
 from datetime import datetime
 from telegram import InputFile
+
+from alarm_logic import (
+    EVENT_FACE,
+    EVENT_GAS,
+    EVENT_MOTION,
+    AlarmConfig,
+    AlarmStateMachine,
+    format_alert,
+)
 from telegram.ext import ApplicationBuilder
 import asyncio
 import subprocess
@@ -689,12 +700,25 @@ class DetectionSystem:
         self.DETECTION_INTERVAL = self.config["system"]["detection_interval"]
         self.FACE_SAVE_INTERVAL = self.config["system"]["face_save_interval"]
 
-        # Alarm tracking
-        self.fire_persistence_count = 0
-        self.smoke_persistence_count = 0
+        # Alarm tracking. All threshold/persistence decisions live in alarm_logic
+        # so they can be unit tested without a camera or a Pi.
         self.ALARM_THRESHOLD = self.config["system"]["alarm_threshold"]
+        self.alarm_state = AlarmStateMachine(
+            AlarmConfig(
+                fire_threshold=self.ALARM_THRESHOLD,
+                smoke_threshold=self.ALARM_THRESHOLD,
+                gas_threshold=max(2, self.ALARM_THRESHOLD),
+                clear_ticks=max(2, self.ALARM_THRESHOLD),
+            )
+        )
         self.alarm_triggered = False
         self.pre_alarm_logged = False
+        self.last_detection_image = None
+
+        # Notifications are handed to a worker thread: a slow Telegram call must
+        # never stall the frame loop (that was the real latency risk, not YOLO).
+        self.notify_queue = queue.Queue(maxsize=32)
+        self.shutdown_event = threading.Event()
         
         # Sound alarm control
         self.alarm_playing = False
@@ -711,6 +735,7 @@ class DetectionSystem:
         self.last_detections = {
             "fire": None,
             "smoke": None,
+            "gas": None,
             "motion": None,
             "face": None
         }
@@ -734,6 +759,16 @@ class DetectionSystem:
         
         # Add MQ2 detection tracking
         self.mq2_gas_detected = False
+
+        # Retention limits for the evidence we write to disk
+        self.max_detection_images = int(
+            self.config["system"].get("max_saved_detections", 200)
+        )
+
+        self._notify_thread = threading.Thread(
+            target=self._notification_worker, daemon=True
+        )
+        self._notify_thread.start()
 
     def init_telegram_service(self):
         """Reinitialize the Telegram service using the current configuration."""
@@ -760,6 +795,10 @@ class DetectionSystem:
         self.DETECTION_INTERVAL = self.config["system"]["detection_interval"]
         self.FACE_SAVE_INTERVAL = self.config["system"]["face_save_interval"]
         self.ALARM_THRESHOLD = self.config["system"]["alarm_threshold"]
+        self.alarm_state.config.fire_threshold = max(1, self.ALARM_THRESHOLD)
+        self.alarm_state.config.smoke_threshold = max(1, self.ALARM_THRESHOLD)
+        self.alarm_state.config.gas_threshold = max(2, self.ALARM_THRESHOLD)
+        self.alarm_state.config.clear_ticks = max(2, self.ALARM_THRESHOLD)
 
         # Explicitly reload Telegram service config and reinitialize the bot
         self.telegram_service.reload_config()
@@ -842,9 +881,10 @@ class DetectionSystem:
                 cv2.imwrite(detection_filename, frame_original)
                 print(f"  {Colors.CYAN}Saved detection image: {detection_filename}{Colors.RESET}")
 
-                self.update_alarm_state(fire_detected, smoke_detected, detection_filename)
+                self.last_detection_image = detection_filename
+                self._prune_detections()
         else:
-            self.update_alarm_state(False, False)
+            self.last_detection_image = None
         return fire_detected, smoke_detected
 
     def run(self):
@@ -898,14 +938,18 @@ class DetectionSystem:
                         self.config_manager.is_detection_enabled("smoke")):
                         fire_detected, smoke_detected = self.process_object_detection(frame_resized, frame)
                     
-                    # Process MQ2 gas detection
+                    # Process MQ2 gas detection. The sensor only *contributes* a
+                    # reading; alarm_logic decides what it means.
                     self.mq2_gas_detected = self.mq2_sensor.read_sensor()
-                    if self.mq2_gas_detected:
-                        print(f"{Colors.RED}[{datetime.now().strftime('%H:%M:%S')}] Gas detected by MQ2 sensor!{Colors.RESET}")
-                        # only update state; sending alert is handled inside update_alarm_state
-                        self.update_alarm_state(fire_detected, smoke_detected, confirmed_by_mq2=True)
-                    else:
-                        print(f"{Colors.GREEN}[{datetime.now().strftime('%H:%M:%S')}] No gas detected by MQ2 sensor.{Colors.RESET}")
+
+                    # One tick of the state machine per processed frame. Vision and
+                    # gas are fed together so a single frame cannot fire the alarm.
+                    self.update_alarm_state(
+                        fire_detected,
+                        smoke_detected,
+                        self.last_detection_image,
+                        gas=self.mq2_gas_detected,
+                    )
                     
                     # Reset to normal if no detections
                     if not (fire_detected or smoke_detected or motion_detected or face_detected or self.mq2_gas_detected):
@@ -941,7 +985,7 @@ class DetectionSystem:
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             self.last_detections["motion"] = timestamp
             
-            self.telegram_service.send_motion_alert(None)
+            self._queue_alert(EVENT_MOTION)
             
             return True
         return False
@@ -974,7 +1018,7 @@ class DetectionSystem:
                     high_res_face = original_frame[y1:y2, x1:x2]
                     face_filename = f"faces/face_{self.face_count}.jpg"
                     cv2.imwrite(face_filename, high_res_face)
-                    self.telegram_service.send_face_alert(face_filename)
+                    self._queue_alert(EVENT_FACE, face_filename)
                     
                     print(f"  {Colors.MAGENTA}Saved face {detection_idx+1}: {face_filename}{Colors.RESET}")
                     
@@ -1071,71 +1115,104 @@ class DetectionSystem:
                 except Exception as e:
                     print(f"{Colors.RED}Error removing old face image: {str(e)}{Colors.RESET}")
     
-    def update_alarm_state(self, fire, smoke, image_path=None, confirmed_by_mq2=False):
-        """Enhanced alarm state logic with persistence tracking, sound, and notifications"""
-        if fire and self.config["detection"]["fire"]:
-            self.fire_persistence_count += 1
-        else:
-            self.fire_persistence_count = max(0, self.fire_persistence_count - 1)  # Gradually decrease
+    def update_alarm_state(self, fire, smoke, image_path=None, gas=None, confirmed_by_mq2=None):
+        """Feed one tick of sensor readings to the alarm state machine.
 
-        if smoke and self.config["detection"]["smoke"]:
-            self.smoke_persistence_count += 1
-        else:
-            self.smoke_persistence_count = max(0, self.smoke_persistence_count - 1)  # Gradually decrease
+        ``alarm_logic`` owns every threshold and every escalation rule; this
+        method only translates a :class:`Decision` into sound, status text and
+        queued notifications.
+        """
+        if confirmed_by_mq2 is not None:  # backwards-compatible keyword
+            gas = confirmed_by_mq2
+        if gas is None:
+            gas = self.mq2_gas_detected
 
-        fire_persist = self.fire_persistence_count >= self.ALARM_THRESHOLD
-        smoke_persist = self.smoke_persistence_count >= self.ALARM_THRESHOLD
+        # A detector the user switched off must never contribute a reading.
+        fire = bool(fire) and self.config["detection"]["fire"]
+        smoke = bool(smoke) and self.config["detection"]["smoke"]
 
-        # Handle gas detection once
-        if confirmed_by_mq2 and not self.alarm_triggered:
-            print(f"{Colors.BOLD}{Colors.RED}⚠️ GAS DETECTED! Triggering alarm...{Colors.RESET}")
-            self.system_status = "Gas Detected"
-            self.alarm_triggered = True
-            self.play_alarm_sound()
-            self.telegram_service.send_gas_alert()
-            # retain gas flag
-            self.mq2_gas_detected = True
+        was_alarm = self.alarm_triggered
+        decision = self.alarm_state.update(fire=fire, smoke=smoke, gas=bool(gas))
 
-        # Persistent fire/smoke alarm as before…
-        if (fire_persist or smoke_persist) and not self.alarm_triggered:
-            alarm_type = ""
-            if fire_persist and smoke_persist:
-                alarm_type = "FIRE & SMOKE"
-                self.system_status = "Fire & Smoke Detected"
-            elif fire_persist:
-                alarm_type = "FIRE"
-                self.system_status = "Fire Detected"
-            else:
-                alarm_type = "SMOKE"
-                self.system_status = "Smoke Detected"
+        self.mq2_gas_detected = bool(gas)
+        self.alarm_triggered = decision.alarm_on
+        self.system_status = decision.status
 
-            mq2_status = "Yes" if confirmed_by_mq2 else "No"
-            print(f"{Colors.BOLD}{Colors.RED}🔥🔥 ALARM STATE: PERSISTENT {alarm_type} DETECTED! 🔥🔥{Colors.RESET}")
-            print(f"{Colors.YELLOW}Confirmed by MQ2: {mq2_status}{Colors.RESET}")
-            self.alarm_triggered = True
-            self.play_alarm_sound()  # Start alarm
-
-            # Update detection timestamps
+        if decision.event:
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            if fire_persist:
+            if decision.fire_confirmed:
                 self.last_detections["fire"] = timestamp
-            if smoke_persist:
+            if decision.smoke_confirmed:
                 self.last_detections["smoke"] = timestamp
+            if decision.gas_confirmed:
+                self.last_detections["gas"] = timestamp
+            print(
+                f"{Colors.BOLD}{Colors.RED}ALARM: {decision.status} "
+                f"({decision.reason}){Colors.RESET}"
+            )
+            self._queue_alert(decision.event, image_path, decision.gas_confirmed)
 
-            # Send Telegram notification with the image
-            if fire_persist:
-                print(f"Sending fire alert with image: {image_path}")
-                self.telegram_service.send_fire_alert(image_path)
-            elif smoke_persist:
-                print(f"Sending smoke alert with image: {image_path}")
+        if decision.alarm_on:
+            self.play_alarm_sound()
+        else:
+            if was_alarm:
+                print(
+                    f"{Colors.GREEN}Alarm cleared: {decision.reason}{Colors.RESET}"
+                )
+                self.stop_alarm()
+            elif decision.changed:
+                print(
+                    f"{Colors.GREEN}State: {decision.status} "
+                    f"({decision.reason}){Colors.RESET}"
+                )
 
-        # Only reset when *no* threats remain (fire, smoke or gas)
-        elif not (fire_persist or smoke_persist or self.mq2_gas_detected) and self.alarm_triggered:
-            print(f"{Colors.BOLD}{Colors.GREEN}✅ Normal State: No persistent Fire, Smoke, or Gas detected. Resetting alarm...{Colors.RESET}")
-            self.stop_alarm()
-            self.alarm_triggered = False
-            self.system_status = "Normal"
-            self.mq2_gas_detected = False
+    # -- notifications ---------------------------------------------------
+    def _queue_alert(self, event, image_path=None, confirmed_by_gas=False):
+        """Hand an alert to the worker thread instead of sending it inline."""
+        if not self.telegram_service.is_enabled():
+            return
+        try:
+            self.notify_queue.put_nowait((event, image_path, confirmed_by_gas))
+        except queue.Full:
+            print(f"{Colors.YELLOW}Notification queue full, dropped: {event}{Colors.RESET}")
+
+    def _notification_worker(self):
+        """Send queued alerts off-thread so the frame loop never blocks on HTTP."""
+        while not self.shutdown_event.is_set():
+            try:
+                event, image_path, confirmed_by_gas = self.notify_queue.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            try:
+                timestamp = datetime.now().strftime("%H:%M:%S")
+                message = format_alert(
+                    event, timestamp, "http://firepi.local:8080/", confirmed_by_gas
+                )
+                if image_path and os.path.exists(image_path):
+                    self.telegram_service.send_notification(message, image_path, event)
+                else:
+                    self.telegram_service.send_notification(message, None, event)
+            except Exception as e:
+                print(f"{Colors.RED}Notification worker error: {e}{Colors.RESET}")
+            finally:
+                self.notify_queue.task_done()
+
+    # -- disk retention --------------------------------------------------
+    def _prune_detections(self):
+        """Keep only the newest ``max_saved_detections`` evidence images."""
+        limit = getattr(self, "max_detection_images", 200)
+        try:
+            files = [f for f in os.listdir("detections") if f.endswith(".jpg")]
+        except FileNotFoundError:
+            return
+        if len(files) <= limit:
+            return
+        files.sort(key=lambda f: os.path.getmtime(os.path.join("detections", f)))
+        for name in files[: len(files) - limit]:
+            try:
+                os.remove(os.path.join("detections", name))
+            except OSError as e:
+                print(f"{Colors.YELLOW}Could not prune {name}: {e}{Colors.RESET}")
 
     def play_alarm_sound(self):
         """Play alarm sound in a thread-safe manner"""
@@ -1171,12 +1248,12 @@ class DetectionSystem:
         self.system_status = "Normal"
         self.alarm_triggered = False
         self.pre_alarm_logged = False
-        self.fire_persistence_count = 0
-        self.smoke_persistence_count = 0
+        self.alarm_state.reset()
 
     def shutdown(self):
         """Clean shutdown of the system"""
         self.running = False
+        self.shutdown_event.set()
         if self.camera:
             self.camera.release()  # Ensure the camera is released
         # Make sure to stop any playing alarm and clean up resources
