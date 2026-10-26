@@ -1,0 +1,6 @@
+# Only needed if you re-export the model to NCNN or retrain it.
+# Not required to run Inferno: models/ already contains the NCNN export.
+-r requirements.txt
+
+torch>=2.0.0
+ncnn>=1.0.20230223

@@ -285,6 +285,9 @@ def restart_system():
         try:
             if dsm.detection_system is not None:
                 dsm.detection_system.running = False
+                # Stop the notification worker too, or a restart leaks one
+                # thread per restart.
+                dsm.detection_system.shutdown_event.set()
             if detection_thread is not None and detection_thread.is_alive():
                 detection_thread.join(timeout=25)
             dsm.detection_system = None

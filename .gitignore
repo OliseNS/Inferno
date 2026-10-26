@@ -2,11 +2,11 @@
 __pycache__/
 *.py[cod]
 *$py.class
-.Python
 *.so
 .venv/
 venv/
 env/
+.pytest_cache/
 
 # Local / generated
 faces/

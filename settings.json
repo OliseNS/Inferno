@@ -17,6 +17,7 @@
     "face_save_interval": 1.0,
     "alarm_threshold": 3,
     "max_saved_faces": 50,
-    "show_bounding_boxes": true
+    "show_bounding_boxes": true,
+    "max_saved_detections": 200
   }
 }

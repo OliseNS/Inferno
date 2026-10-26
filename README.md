@@ -1,391 +1,218 @@
-# 🔥 Inferno (Blazetection)
+# 🔥 Inferno
 
-Real-time fire, smoke, motion, and face detection system with a beautiful web dashboard, Telegram alerts, and optional Raspberry Pi hardware support (camera, MQ2 gas sensor, audio alarm).
+Real-time fire, smoke, gas and person detection on a Raspberry Pi, with a web
+dashboard, a local siren, and Telegram alerts that carry evidence.
 
-![Dashboard Preview](https://img.shields.io/badge/Status-Active-brightgreen) ![Python](https://img.shields.io/badge/Python-3.10+-blue) ![Flask](https://img.shields.io/badge/Flask-3.0+-orange)
+Built for the case a smoke detector can't cover: you want to *see* what is
+happening, get told about it wherever you are, and not be woken up by steam from
+the shower.
 
-**🔐 Security First:** Telegram credentials live in a **`.env`** file (never committed). **`settings.json`** only contains non-sensitive options.
-
----
-
-## ✨ Features
-
-- 🔥 **Fire Detection** - YOLO11 model trained for fire detection
-- 💨 **Smoke Detection** - Visual smoke detection with YOLO11
-- 👤 **Face Detection** - MediaPipe-powered face detection and tracking
-- 🏃 **Motion Detection** - OpenCV-based motion tracking
-- 🌐 **Web Dashboard** - Beautiful, modern real-time dashboard
-- 📱 **Telegram Alerts** - Instant notifications with images
-- 🔊 **Text-to-Speech** - Browser-based audio playback using gTTS
-- 🎯 **Bounding Box Toggle** - Show/hide detection overlays
-- 📦 **Easy Setup** - Clone and run in minutes
+![Python](https://img.shields.io/badge/Python-3.10+-blue)
+![Flask](https://img.shields.io/badge/Flask-3.0+-orange)
+![Model](https://img.shields.io/badge/YOLO11-NCNN-red)
 
 ---
 
-## 🚀 Quick Start
+## What it does
 
-### Prerequisites
+- **Fire and smoke detection** with a YOLO11 model, exported to NCNN and run
+  locally at 224×224.
+- **Gas detection** from an MQ-2 sensor on the Pi's GPIO — treated as *evidence*,
+  not as a trigger (see [docs/ALARM_LOGIC.md](docs/ALARM_LOGIC.md)).
+- **Face and motion detection** with MediaPipe and MOG2, for presence context.
+- **Local siren** that sounds even when the network is down.
+- **Telegram alerts** with the detection frame attached, sent from a worker
+  thread so a slow API never stalls the camera.
+- **Web dashboard** — live MJPEG feed with overlays, per-detector toggles,
+  detection gallery, uptime and frame stats, text-to-speech.
+- **Everything local.** No cloud inference, no accounts.
 
-- **Python 3.10 or higher**
-- **Webcam or IP camera** (MJPEG/RTSP stream)
-- **Chromium-based browser** (Chrome, Edge, Brave) - **Recommended for best compatibility**
-  - ⚠️ **Firefox may have issues with video streaming and audio playback**
+## The alarm is the interesting part
 
-### Installation
+Most hobby fire detectors fail by crying wolf, not by missing a fire. The rules
+here are:
+
+1. Fire or smoke must persist for `alarm_threshold` consecutive ticks before
+   anything sounds — one frame is not evidence.
+2. The gas sensor needs a *longer* window and reports itself as a gas event, not
+   as fire. Cooking, deodorant and sensor burn-in all trip an MQ-2.
+3. Once the alarm is on, a worsening situation (smoke → fire, fire → gas) sends a
+   new alert; it never re-sends one already sent.
+4. The alarm clears only after several consecutive clean ticks, so a dropped
+   frame doesn't produce a stop-start siren.
+
+All of that lives in [`alarm_logic.py`](alarm_logic.py), free of hardware and
+network imports, and is unit tested in [`tests/`](tests/). Details and the full
+threshold table: [docs/ALARM_LOGIC.md](docs/ALARM_LOGIC.md).
+
+---
+
+## Quick start
 
 ```bash
-# 1. Clone the repository
 git clone https://github.com/OliseNS/Inferno.git
 cd Inferno
 
-# 2. Create virtual environment
 python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+source .venv/bin/activate
 
-# 3. Install dependencies
 pip install -r requirements.txt
 
-# 4. Set up environment variables (for Telegram - optional)
-cp .env.example .env
-# Edit .env with your favorite text editor:
-nano .env  # or vim, code, etc.
-# Add your TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID
+# Optional — Telegram alerts
+cp .env.example .env      # then fill in the two values
+
+python webserver.py       # dashboard on http://localhost:8080
 ```
 
-### Running the System
-
-```bash
-# Run the full system (web dashboard + detection)
-python webserver.py
-```
-
-Open your **Chromium-based browser** and navigate to:
-- **Local:** `http://localhost:8080`
-- **Network:** `http://<your-ip>:8080`
-
-### Headless Mode (Optional)
-
-Run detection only without the web interface:
+Detection only, no dashboard:
 
 ```bash
 python detection_system.py
 ```
 
----
+The YOLO11 NCNN model is committed under `models/`, so there is no export step
+and no torch download.
 
-## Repository layout
+### Requirements
 
-| Path | Purpose |
-|------|---------|
-| `webserver.py` | Flask app: dashboard, API, background detection |
-| `detection_system.py` | Camera, YOLO, MediaPipe, motion, Telegram, alarm |
-| `settings.json` | Non-secret runtime options (committed template; copy from `settings.example.json` if needed) |
-| `.env` | **Secrets only** — `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (create from `.env.example`, never commit) |
-| `models/fire_smoke_yolo11_ncnn_model/` | YOLO11 NCNN export for fire/smoke (folder name must end with `_ncnn_model` for Ultralytics) |
-| `static/`, `templates/` | Dashboard assets |
-| `streaming_server/` | Optional MJPEG server (`server.py`, port 5000) |
-| `scripts/ncnn_smoke_test.py` | Optional NCNN check (requires `ncnn` + `torch`) |
+Python 3.10+, a USB or IP camera, and Linux/macOS/Windows for the dashboard.
+For the full build: a **Raspberry Pi 4 (4 GB+)** with Raspberry Pi OS 64-bit, an
+MQ-2 sensor on GPIO 17, and a speaker.
 
-`system.model_path` in `settings.json` points at the YOLO export (default: `models/fire_smoke_yolo11_ncnn_model`). NCNN exports must live in a directory whose name ends with `_ncnn_model`. Override with another folder or `.pt` path.
+| | |
+|---|---|
+| RAM | 2 GB minimum, 4 GB recommended |
+| Disk | ~200 MB (model is 43 MB) |
+| Camera | USB webcam, Pi Camera, or an MJPEG/RTSP URL |
 
 ---
 
-## Environment variables
+## Configuration
 
-| Variable | Description |
-|----------|-------------|
-| `TELEGRAM_BOT_TOKEN` | Telegram bot token from [@BotFather](https://t.me/BotFather) |
-| `TELEGRAM_CHAT_ID` | Destination chat or group ID |
+Non-secret settings live in `settings.json`; secrets live only in `.env`. The
+dashboard writes both for you when you save the config form.
 
-The dashboard can append/update these in `.env` when you save token/chat ID (non-empty fields only).
-
----
-
-## 📋 System Requirements
-
-### Minimum Requirements
-- **OS:** Linux, macOS, or Windows 10/11
-- **Python:** 3.10 or higher
-- **RAM:** 2GB minimum (4GB recommended)
-- **Storage:** 500MB for dependencies + model files
-- **Camera:** USB webcam or IP camera (MJPEG/RTSP stream)
-
-### Recommended for Raspberry Pi
-- **Model:** Raspberry Pi 4 (4GB RAM or higher)
-- **OS:** Raspberry Pi OS (64-bit recommended)
-- **Camera:** Pi Camera Module or USB webcam
-- **Optional:** MQ2 gas sensor, audio speaker for alarm
-
----
-
-## 🎯 Configuration
-
-### First Run
-
-On first run, `settings.json` is automatically created with default values. You can modify it directly or use the web dashboard.
-
-### Camera Setup
-
-**Option 1: Built-in Camera (default)**
 ```json
 {
+  "detection": { "fire": true, "smoke": true, "motion": true, "face": true },
+  "telegram":  { "enabled": false, "cooldown": 30 },
   "system": {
+    "camera_index": 0,
     "camera_url": "",
-    "camera_index": 0
+    "model_path": "models/fire_smoke_yolo11_ncnn_model",
+    "detection_interval": 0.5,
+    "face_save_interval": 1.0,
+    "alarm_threshold": 3,
+    "max_saved_faces": 50,
+    "max_saved_detections": 200,
+    "show_bounding_boxes": true
   }
 }
 ```
 
-**Option 2: IP Camera Stream**
-```json
-{
-  "system": {
-    "camera_url": "http://192.168.1.100:8081/video"
-  }
-}
-```
+| Key | Meaning |
+|---|---|
+| `detection.*` | Enable each detector independently |
+| `telegram.enabled` | Master switch for outbound alerts |
+| `telegram.cooldown` | Minimum seconds between two alerts of the same type |
+| `camera_url` | MJPEG/RTSP URL, or a numeric string for a device index; takes precedence over `camera_index` |
+| `detection_interval` | Seconds between detection ticks (0.5 = twice a second) |
+| `alarm_threshold` | Consecutive positive ticks before fire/smoke raises the alarm |
+| `max_saved_faces` / `max_saved_detections` | How many evidence images to keep on disk |
+| `show_bounding_boxes` | Draw overlays on the stream (and therefore on saved evidence) |
 
-**Option 3: Camera by Index**
-```json
-{
-  "system": {
-    "camera_url": "1"
-  }
-}
-```
+### Secrets
 
-### Telegram Setup (Optional)
+| Variable | Where to get it |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | [@BotFather](https://t.me/BotFather) |
+| `TELEGRAM_CHAT_ID` | [@userinfobot](https://t.me/userinfobot) |
 
-1. Create a bot with [@BotFather](https://t.me/BotFather)
-2. Get your chat ID from [@userinfobot](https://t.me/userinfobot)
-3. Add to `.env`:
-
-```bash
-TELEGRAM_BOT_TOKEN=your_bot_token_here
-TELEGRAM_CHAT_ID=your_chat_id_here
-```
-
-4. Enable in dashboard or `settings.json`:
-
-```json
-{
-  "telegram": {
-    "enabled": true,
-    "cooldown": 30
-  }
-}
-```
+`.env` is gitignored. Never paste a token into an issue.
 
 ---
 
-## 🎨 Dashboard Features
+## HTTP API
 
-### Detection Controls
-- Toggle fire, smoke, motion, and face detection on/off
-- Show/hide bounding boxes on video feed
-- Adjust detection sensitivity in settings
+The dashboard is a thin client over these:
 
-### Real-Time Monitoring
-- Live camera feed with detection overlays
-- System status indicator (Normal/Fire/Smoke/Motion/Face)
-- Frame counter and system uptime
-- Recent face gallery
-- Detection image gallery
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/` | Dashboard |
+| GET | `/video_feed` | MJPEG stream with overlays |
+| GET | `/api/status` | System status and last detection timestamps |
+| GET / POST | `/api/config` | Read or update settings (POST writes `.env` for secrets) |
+| GET | `/api/statistics` | Uptime and frames processed |
+| GET | `/api/faces`, `/api/detections` | Evidence galleries |
+| POST | `/api/alarm/stop` | Silence the siren |
+| POST | `/api/telegram/test` | Send a test message |
+| POST | `/api/tts` | Speak a phrase on the host |
+| POST | `/api/restart` | Restart the detection loop |
 
-### Text-to-Speech
-- Type any message and hear it through your browser
-- TTS history with click-to-replay
-- Uses Google Text-to-Speech (gTTS)
+## Raspberry Pi notes
 
-### Telegram Integration
-- Test connection with one click
-- View credentials status
-- Adjust notification cooldown
-- Automatic alerts with detection images
-
----
-
-## 🛠️ Troubleshooting
-
-### Video Feed Not Loading
-
-**Problem:** Black screen or "Waiting for camera..."
-
-**Solutions:**
-1. Check camera connection: `ls /dev/video*` (Linux)
-2. Try different camera index in settings (0, 1, 2, etc.)
-3. Ensure no other application is using the camera
-4. For IP cameras, verify the stream URL is accessible
-
-### Audio/TTS Not Working
-
-**Problem:** No sound when using TTS
-
-**Solutions:**
-1. **Use a Chromium-based browser** (Chrome, Edge, Brave)
-2. Check browser audio permissions
-3. Ensure speakers/headphones are connected and volume is up
-4. Try clicking the play button in the browser if autoplay is blocked
-
-### Firefox Compatibility Issues
-
-**Problem:** Video stuttering or TTS not playing
-
-**Solution:** Firefox has known issues with MJPEG streams and audio playback. **Please use Chrome, Edge, or Brave** for the best experience.
-
-### Detection Not Working
-
-**Problem:** No detections appearing
-
-**Solutions:**
-1. Check if detection types are enabled in dashboard
-2. Verify model path in `settings.json` points to correct YOLO model
-3. Ensure proper lighting for fire/smoke detection
-4. Check console logs for errors: `tail -f logs/inferno.log`
-
-### Telegram Alerts Not Sending
-
-**Problem:** Test message fails
-
-**Solutions:**
-1. Verify token and chat ID in `.env` are correct
-2. Check bot is not blocked
-3. Ensure internet connection is stable
-4. Check Telegram is enabled in settings
-5. Verify cooldown period hasn't been triggered
-
-### Raspberry Pi Performance Issues
-
-**Problem:** Slow frame rate or system lag
-
-**Solutions:**
-1. Reduce video resolution in camera settings
-2. Increase `detection_interval` in settings (e.g., 1.0 seconds)
-3. Disable face detection if not needed (most CPU-intensive)
-4. Use NCNN model for better performance
-5. Ensure Pi has adequate cooling
-
-### Permission Errors
-
-**Problem:** "Permission denied" when accessing camera or GPIO
-
-**Solutions:**
 ```bash
-# Add user to video group (Linux)
-sudo usermod -a -G video $USER
-
-# For GPIO on Raspberry Pi
-sudo usermod -a -G gpio $USER
-
-# Reboot after changes
+sudo usermod -a -G video $USER     # camera access
+sudo usermod -a -G gpio  $USER     # MQ-2 on GPIO 17
 sudo reboot
 ```
 
-## 📊 Logs
+The MQ-2 needs ~24 h of burn-in before its readings are worth trusting, and it is
+sensitive to temperature and humidity — that is exactly why it is used to
+corroborate the camera rather than to raise the alarm by itself.
 
-All console output (stdout/stderr) is automatically logged to **`logs/inferno.log`**. The `logs/` directory is created automatically.
+Sound playback uses `aplay`, so install `alsa-utils` if `alarm.wav` is silent.
+
+## Troubleshooting
+
+- **No detections** — check the toggles in the dashboard, the model path, and
+  `tail -f logs/inferno.log`.
+- **Camera missing on the Pi** — the stream URL form (`camera_url`) is more
+  reliable than the index for a Pi Camera over `libcamera`; try the MJPEG URL.
+- **Telegram silent** — verify both `.env` values, that the bot isn't blocked, and
+  that the per-type cooldown hasn't swallowed the message. The dashboard's test
+  button ignores cooldown.
+- **Pi throttling after ten minutes** — lower the frame size, raise
+  `detection_interval`, or disable face detection (the most expensive detector).
+
+---
+
+## Project layout
+
+| Path | Purpose |
+|---|---|
+| `detection_system.py` | Camera, detectors, MQ-2, alarm wiring, notification worker |
+| `alarm_logic.py` | Pure alarm decision logic (tested, no hardware imports) |
+| `webserver.py` | Flask app, API, MJPEG stream |
+| `inferno_logging.py` | Tee console output to `logs/inferno.log` |
+| `templates/`, `static/` | Dashboard |
+| `models/fire_smoke_yolo11_ncnn_model/` | YOLO11 NCNN export (folder name must end `_ncnn_model`) |
+| `scripts/ncnn_smoke_test.py` | Offline check that the NCNN export loads |
+| `streaming_server/` | Standalone MJPEG server, no detection (port 5000) |
+| `tests/` | Unit tests |
+| `docs/` | [Architecture](docs/ARCHITECTURE.md), [alarm logic](docs/ALARM_LOGIC.md) |
+
+## Development
 
 ```bash
-# View live logs
-tail -f logs/inferno.log
-
-# Search for errors
-grep "ERROR" logs/inferno.log
+pip install -r requirements-dev.txt
+python -m pytest tests/ -q
 ```
 
----
+The tests need no camera, no GPIO and no model: `alarm_logic.py` is deliberately
+importable on any machine.
 
-## 🤝 Contributing
+## Honest limitations
 
-Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
+- The detector was fine-tuned on a modest fire/smoke dataset; treat it as a
+  corroborating sensor, not a certified detector. It is not a replacement for a
+  smoke alarm and is not life-safety rated.
+- False-positive and false-negative rates have not been measured against a
+  labelled test set yet. Numbers beat adjectives — that measurement is the next
+  piece of work.
+- The Telegram path is best-effort: if the network is down the local siren still
+  sounds, and alerts are dropped rather than queued indefinitely.
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+## License
 
----
-
-## 📝 Tips for Best Results
-
-### Fire Detection
-- Ensure good lighting conditions
-- Position camera to have clear view of monitored areas
-- Test with different angles for optimal detection
-
-### Face Detection
-- Adequate lighting is crucial for face detection
-- Faces should be reasonably front-facing
-- Works best at 1-3 meters distance
-
-### Motion Detection
-- Minimize background movement (curtains, fans)
-- Adjust `min_area` in code if getting too many false positives
-- Works better with static camera mount
-
-### System Performance
-- Start with fewer detection types enabled
-- Gradually enable more as needed
-- Monitor system resources (CPU, RAM)
-- On Raspberry Pi, consider using lower resolution camera
-
----
-
-## 🌟 Project Highlights
-
-- **Modern UI:** Beautiful gradient design with smooth animations
-- **Real-time Processing:** Low-latency detection with optimized frame processing
-- **Flexible Configuration:** Everything configurable via JSON or web UI
-- **Privacy-First:** All processing happens locally, no cloud dependencies
-- **Production Ready:** Logging, error handling, and graceful degradation
-- **Extensible:** Easy to add new detection types or notification channels
-
----
-
-## 📞 Support
-
-If you encounter any issues or have questions:
-
-1. Check the [Troubleshooting](#-troubleshooting) section
-2. Review logs in `logs/inferno.log`
-3. Open an issue on [GitHub](https://github.com/OliseNS/Inferno/issues)
-
----
-
-## 👨‍💻 Author
-
-**OliseNS** — [GitHub](https://github.com/OliseNS)
-
-Built with ❤️ using Python, Flask, OpenCV, YOLO11, and MediaPipe.
-
----
-
-## 📄 License
-
-No license file is included yet; contact the author for usage terms.
-
----
-
-## ⚡ Quick Command Reference
-
-```bash
-# Start system
-python webserver.py
-
-# Check logs
-tail -f logs/inferno.log
-
-# Update dependencies
-pip install -r requirements.txt --upgrade
-
-# Reset configuration
-rm settings.json  # Will be recreated with defaults
-
-# Clear old detections
-rm -rf faces/* detections/* voices/*
-```
-
----
-
-**⭐ If you find this project useful, please consider giving it a star on GitHub!**
+No license file yet — contact the author before reuse.

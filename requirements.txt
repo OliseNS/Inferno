@@ -1,3 +1,9 @@
+# Inferno runtime dependencies.
+#
+# The fire/smoke model ships already exported to NCNN under models/, so the Pi
+# runs inference through Ultralytics' NCNN backend without needing torch for the
+# export step. If you re-export or re-train, install requirements-train.txt.
+
 # Core detection & vision
 opencv-python>=4.8.0
 ultralytics>=8.0.0
@@ -13,8 +19,5 @@ python-dotenv>=1.0.0
 # Notifications
 python-telegram-bot>=20.0
 
-# Optional: Raspberry Pi GPIO (MQ2 sensor)
-# gpiozero>=2.0
-
-# Optional: NCNN smoke test script only (scripts/ncnn_smoke_test.py)
-# pip install ncnn torch
+# Optional: Raspberry Pi GPIO for the MQ-2 sensor (GPIO 17)
+#   gpiozero>=2.0

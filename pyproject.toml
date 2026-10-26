@@ -1,0 +1,17 @@
+[project]
+name = "inferno"
+version = "1.1.0"
+description = "Real-time fire, smoke and gas detection for the Raspberry Pi, with a web dashboard and Telegram alerts"
+readme = "README.md"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E9", "F63", "F7", "F82"]
